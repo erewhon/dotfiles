@@ -1,3 +1,4 @@
+# -*- Mode: sh-mode -*-
 #
 # zsh startup for interactive and non-interactive shells
 #
@@ -6,3 +7,13 @@
 # Turn off macOS zsh session management
 #
 export SHELL_SESSIONS_DISABLE=1
+
+#
+# Set XDG-related variables
+#
+: ${XDG_CONFIG_HOME:=$HOME/.config}
+: ${XDG_CACHE_HOME:=$HOME/.cache}
+: ${XDG_DATA_HOME:=$HOME/.local/share}
+: ${XDG_STATE_HOME:=$HOME/local/state}
+
+export ZDOTDIR=${XDG_CONFIG_HOME}/zsh
