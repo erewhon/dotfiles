@@ -1,0 +1,265 @@
+# -*- Mode: shell-script -*-
+#
+# Common shell aliases and functions.   These should work under both zsh and bash.
+#
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ,=popd
+alias c=cd
+alias d=dirs
+alias j=jobs
+alias p=pushd
+alias s=ssh
+alias e='emacsclient --no-wait --create-frame'
+alias gdh='git diff HEAD'
+alias mc='mc -x'
+alias play=ansible-playbook
+
+TMUX_VERSION=$( tmux -V | awk '{print $2}' )
+
+if [[ "$TMUX_VERSION" == "next-3.3" ]]; then
+    alias wx='tmux popup -w 150 -h 45 -KR "curl wttr.in/Houston"'
+else
+    alias wx='curl wttr.in/Houston'
+fi
+
+function mux() {
+    tmux new-session -A -s $1
+}
+
+function imux() {
+    tmux -CC new-session -A -s $1
+}
+
+if command -v fd-find &> /dev/null; then
+    alias fd=fd-find
+fi
+
+if command -v rlwrap &> /dev/null; then
+    alias rl='rlwrap'
+    alias nc='rlwrap nc'
+fi
+
+if command -v fzf &> /dev/null; then
+    alias gitb='git branch | fzf-tmux -d 15'
+    # fuzzy preview
+    alias fp="fzf --preview 'bat --style=full --color=always --line-range :500 {}' --preview-window '~3'"
+    # Setting rg as the default source for fzf
+    # export FZF_DEFAULT_COMMAND='rg --files --no-ignore --hidden --follow -g "!{.git,node_modules}/*" 2> /dev/null'
+
+    # Search with ripgrep, filter in fzf, preview in bat.  Fuzzy Search Preview
+    INITIAL_QUERY="" 
+    RG_PREFIX="rg --column --line-number --no-heading --color=always --smart-case "
+    function fsp() {
+        FZF_DEFAULT_COMMAND="$RG_PREFIX '$INITIAL_QUERY'" \
+        fzf --bind "change:reload:$RG_PREFIX {q} || true" \
+            --ansi --disabled --query "$INITIAL_QUERY" \
+            --layout=reverse \
+            --delimiter : \
+            --preview 'bat --style=full --show-all --color=always --highlight-line {2} {1}' \
+            --preview-window '~3:+{2}+3/2'
+        }
+
+    # git history preview
+    alias ghp="git log --oneline | fzf --multi --preview 'git show {+1} | bat --style=full --color=always'"
+
+    function gdp() {
+        preview="git diff $@ --color=always -- {-1}"
+        git diff $@ --name-only | fzf -m --ansi --preview $preview
+    }
+fi
+
+
+alias gupv='git pull --rebase --autostash -v'
+alias gw='git worktree'
+
+# gwb='git worktree add -b foo ../foo origin/master'
+
+# deprecate the below.  Switched to rg
+function gack() { 
+  ack -g $* 
+}
+
+function eack() { 
+  emacsclient -n $( ack -g $* ) 
+}
+
+# http://stackoverflow.com/questions/714421/what-is-an-easy-way-to-do-a-sorted-diff-between-two-files
+function diffs() {
+        diff "${@:3}" <(sort "$1") <(sort "$2")
+}
+
+function sumcount() {
+    sort | uniq -c | sort -n
+}
+
+function batdiff() {
+    git diff --name-only --diff-filter=d | xargs bat --diff
+}
+
+function fjwt() {
+  for part in 1 2; do
+    b64="$(cut -f$part -d. <<< "$1" | tr '_-' '/+')"
+    len=${#b64}
+    n=$((len % 4))
+    if [[ 2 -eq n ]]; then
+      b64="${b64}=="
+    elif [[ 3 -eq n ]]; then
+      b64="${b64}="
+    fi
+    d="$(openssl enc -base64 -d -A <<< "$b64")"
+    python -mjson.tool <<< "$d"
+    # don't decode further if this is an encrypted JWT (JWE)
+    if [[ 1 -eq part ]] && grep '"enc":' <<< "$d" >/dev/null ; then
+        exit 0
+    fi
+  done
+}
+
+function tailf() {
+    tail -f "$@" | bat --paging=never -l log
+}
+
+#.# Better Git Logs.
+### Using EMOJI-LOG (https://github.com/ahmadawais/Emoji-Log).
+
+# Git Commit, Add all and Push — in one step.
+function gcap() {
+    git add . && git commit -m "$*" && git push
+}
+
+# NEW.
+function gnew() {
+    gcap "📦 NEW: $@"
+}
+
+# IMPROVE.
+function gimp() {
+    gcap "👌 IMPROVE: $@"
+}
+
+# FIX.
+function gfix() {
+    gcap "🐛 FIX: $@"
+}
+
+# RELEASE.
+function grlz() {
+    gcap "🚀 RELEASE: $@"
+}
+
+# DOC.
+function gdoc() {
+    gcap "📖 DOC: $@"
+}
+
+# TEST.
+function gtst() {
+    gcap "✅ TEST: $@"
+}
+
+
+quote() {
+    # 0. Show date
+    # 1. pick a quote source (fortune, zippy?)
+    # 2. pipe it to a viewer (parrotsay, cowsay, pokemonsay, lolcat)
+    fortune | parrotsay
+}
+
+
+if command -v cowsay &> /dev/null
+then
+    gnusay() {
+        cowsay -f gnu "$@"
+    }
+
+    whocall() {
+        cowsay -f ghostbusters Who you Gonna Call | lolcat
+    }
+fi
+
+
+starwars() {
+    nc towel.blinkenlights.nl 23
+}
+
+
+if command -v asciiquarium 1>/dev/null 2>&1; then
+    alias aq=asciiquarium
+fi
+
+growl() { echo -e $'\e]9;'${1}'\007' ; return  ; }
+
+# __ensure_command() {
+#   command -v $1 &> /dev/null
+# }
+
+# todo: add optional commands, like ansible?
+
+doctor() {
+  echo Verifying add-on commands
+  # command -v rlwrap &> /dev/null || ''
+  for cmd in bat delta exa fd fx fzf go http jq neofetch node npm rlwrap tmux zoxide; do
+      echo -ne "\nchecking for ${cmd}... "
+      command -v $cmd &> /dev/null || echo -n "missing command '${cmd}'"
+  done
+  echo -e "\n\nDone"
+}
+
+append_ssh_key() {
+    ssh $1 "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+}
+
+function autotmux {
+    autossh -M 0 -t $1 'tmux -2 attach -d'
+}
+
+#
+# Mac-specific things
+#
+function display_notify() {
+    /usr/bin/osascript -e "display notification \"$*\""
+}
+
+function send() {
+    osascript -e 'tell application "System Events" to keystroke "'"$*"'"'
+    display_notify "sent string" with title "zshrc"
+}
+
+function send_slow() {
+    cat <<EOF | osascript -
+    set texttowrite to "$*"
+    tell application "System Events"
+       repeat with i from 1 to count characters of texttowrite
+           keystroke (character i of texttowrite)
+           delay 0.04
+       end repeat
+    end tell
+EOF
+}
+
+function send_slow_file() {
+   cat $* | while read line
+   do
+       send_slow "$line"
+       osascript -e 'tell application "System Events" to keystroke return'
+   done
+}
+
+function send_slow_multiline() {
+   sleep 5
+   while read line
+   do
+       send_slow "$line"
+       osascript -e 'tell application "System Events" to keystroke return'
+   done
+}
+
+
+function mkts() {
+    echo "Initializing new package for Typescript"
+    npm init -y
+    npm i --save-dev typescript @types/node ts-node nodemon
+    npx tsc --init
+    # npx tsc --init --rootDir src --outDir lib --esModuleInterop --resolveJsonModule --lib es6,dom  --module commonjs
+}

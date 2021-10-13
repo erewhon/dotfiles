@@ -1,0 +1,17 @@
+*~
+.cfg
+*.obsolete
+*.bak
+.DS_Store
+
+#
+# Exclude various temporary artifacts from Emacs
+#
+/.emacs.d/.emacs.desktop*
+/.emacs.d/elisp.el
+/.emacs.d/elpa/
+/.emacs.d/org-clock-save.el
+/.emacs.d/recentf
+/.emacs.d/image-dired/
+/.emacs.d/eshell/history
+/.emacs.d/tramp
