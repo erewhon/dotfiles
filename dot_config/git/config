@@ -1,0 +1,36 @@
+[user]
+	name = Steven Byrnes
+	email = steven@byrnes.org
+        signingkey = 81EA9B05BF749A95
+
+[rerere]
+	enabled = true
+
+[filter "lfs"]
+	process = git-lfs filter-process
+	required = true
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+
+[pull]
+        ff = only
+
+[diff]
+    colorMoved = default
+
+[core]
+    pager = delta
+    # autocrlf = input
+
+[delta]
+     syntax-theme = Dracula
+     line-numbers = true
+#    side-by-side = true
+
+[interactive]
+     diffFilter = delta --color-only
+
+[include]
+     path = ~/.gitconfig-local
+[init]
+	defaultBranch = main
