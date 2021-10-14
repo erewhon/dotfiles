@@ -129,3 +129,5 @@
 ;; (setq desktop-restore-frames nil)                         ;; Don't save frame and window configuration
 
 ;;  (setq desktop-restore-eager 0))                            ;; eagerly restore no buffers; lazy-load all of them
+
+(setq company-idle-delay 1.0)
