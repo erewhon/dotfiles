@@ -32,9 +32,9 @@ if [[ -o login ]]; then
     #
     NOW=$( date +'%F %H:%M' )
 
-    if ! cmp -s ~/.last_neofetch <( echo $NOW )
+    if ! cmp -s $XDG_CACHE_HOME/.last_neofetch <( echo $NOW )
     then
-        echo $NOW > ~/.last_neofetch
+        echo $NOW > $XDG_CACHE_HOME/.last_neofetch
 
         if command -v neofetch 2>&1 > /dev/null; then
             if [[ -z "$TMUX" ]]; then
@@ -44,22 +44,8 @@ if [[ -o login ]]; then
             fi
         fi
     else
-        # do nothing...   nice and clean!
-        
-        # if command -v fortune &> /dev/null; then
-        #     if [[ -z "$TMUX" ]]; then
-        #         fortune | parrotsay
-        #     fi
-        # else
-        #     # If fortunate isn't available, just unconditionally show neofetch?
-        #     command -v neofetch >/dev/null 2>&1 && neofetch
-        # fi
+        # do nothing for now...   nice and clean!
     fi
-
-    # neofetch --size 25% --iterm2 ~/Documents/Pictures/Self/horsing_around.jpg
-
-    # figlet -w 200-k -f "$(brew --prefix)/share/figlet/fonts/larry3d.flf" "$(printf '%.0s ' {0..5})Hey,"
-    # figlet -w 200 -k -f "$(brew --prefix)/share/figlet/fonts/larry3d.flf" "$(printf '%.0s ' {0..5})$(whoami)"
 fi
 
 
@@ -70,14 +56,13 @@ fi
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
 # confirmations, etc.) must go above this block; everything else may go below.
-if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+if [[ -r "${XDG_CACHE_HOME}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
 
 #
 # Zsh config.   A lot of oh-my-zsh, a lot of other things...
 #
-
 export MANPATH="/usr/local/man:$MANPATH"
 export DISABLE_AUTO_UPDATE="true"         # Do not auto update oh my zsh
                                           # Run "omz update" to manually update.
@@ -179,16 +164,10 @@ HISTSIZE=1000000
 SAVEHIST=$HISTSIZE
 export HISTFILE="$XDG_STATE_HOME"/zsh/history
 
-if [ -d /usr/java/current ]; then
-  export JAVA_HOME=/usr/java/current
-fi
-
 setopt EXTENDED_HISTORY
 
 compdef _hosts asc
 compdef _hosts bsc
-
-export GROOVY_HOME=/usr/local/opt/groovy/libexec
 
 #
 # Syntax highlighting of command-line ala "fish"
@@ -262,29 +241,16 @@ zshaddhistory() {
 
 [[ -s "$HOME/.zshrc-local" ]] && source "$HOME/.zshrc-local"
 
-# On Mac
-# [ -f ~/.fzf.zsh -a -f /usr/local/opt/fzf/shell/key-bindings.zsh ] && source ~/.fzf.zsh
-
-# On Debian-based system
-# [ -f ~/.fzf.zsh -a -f /usr/share/doc/fzf/examples/key-bindings.zsh ] && source /usr/share/doc/fzf/examples/key-bindings.zsh
-
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
-[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+[[ ! -f $ZDOTDIR/.p10k.zsh ]] || source $ZDOTDIR/.p10k.zsh
 
 #
 # experimental: McFly.  Need to troubleshoot why this sometimes doesn't seem to bind!
 #
 if command -v mcfly &> /dev/null; then
     # export MCFLY_FUZZY=true
-    # eval "$(mcfly init zsh)"
-    [[ ! -f ~/.dotfiles/mcfly.zsh ]] || source ~/.dotfiles/mcfly.zsh
+    source $ZDOTDIR/mcfly.zsh
 fi
-
-#
-# Make sure things are bound correctly!  (But why!?)
-#
-# bindkey '^R' mcfly-history-widget
-
 
 # add arch to prompt.  look at powrelevel10
 
