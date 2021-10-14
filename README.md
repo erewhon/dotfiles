@@ -18,3 +18,5 @@ Refresh and apply externals (for example Oh My Zsh):
 
     chezmoi --refresh-externals apply
 
+Notes on XDG-compliance: https://wiki.archlinux.org/title/XDG_Base_Directory
+

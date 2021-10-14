@@ -1,0 +1,10 @@
+#!/bin/sh
+# -*- Mode: shell-mode -*-
+#
+# Installs packages.  Runs only when script changes.
+#
+{{ if eq .chezmoi.os "linux" -}}
+echo sudo apt install ripgrep
+{{ else if eq .chezmoi.os "darwin" -}}
+echo brew install ripgrep
+{{ end -}}
