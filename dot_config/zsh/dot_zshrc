@@ -60,24 +60,21 @@ fi
 # Zsh config.   A lot of oh-my-zsh, a lot of other things...
 #
 export MANPATH="/usr/local/man:$MANPATH"
-export DISABLE_AUTO_UPDATE="true"         # Do not auto update oh my zsh
-                                          # Run "omz update" to manually update.
+export DISABLE_AUTO_UPDATE="true"         # Do not auto update oh my zsh.  Chezmoi manages it.
 
 # add elements to path, uniquely
 typeset -U path
 
 # set up paths
-path=(~/bin               # link to ~/.dotfiles/bin
-      ~/bin/$( uname -s ) # deprecate
-      ~/bin.local         # deprecate / consolidate
+path=(~/bin
       ~/.cargo/bin
-      ~/.local/bin        # local binaries
+      ~/.local/bin
+      ~/.emacs.d/bin
       /usr/local/opt/python-3.9.7/bin
       ~/Library/Python/3.9/bin
       # /usr/local/bin
       # /usr/local/sbin
       /snap/bin
-      ~/.emacs.d/bin
       $path)
 
 #
@@ -89,7 +86,7 @@ if command -v go &> /dev/null; then
 
 fi
 
-source ~/.shellrc      # move to ~/.dotfiles path to eliminate need for symlink!
+source $ZDOTDIR/.shellrc
 
 #
 # It's the 21st century.  Why are our Unix terminals so boring?  Back
@@ -115,7 +112,6 @@ setopt AUTO_CD                       # You can just type a directory and CD ther
 
 plugins=(ansible     # aliases of note: a
          aws
-         # bgnotify  # requires terminal-notifier.  Notify after long running commands
          brew        # aliases of note: brews, bubo, bubu
          chucknorris # chuck, chuck_cow
          docker
@@ -126,13 +122,11 @@ plugins=(ansible     # aliases of note: a
          gradle      # can just type 'gradle' and it will use wrapper
          httpie
          history
-         jira
          kubectl
          microk8s
          mosh
          npm
          ripgrep
-         supervisor
          tmux
          yarn
          zsh-autosuggestions   # Fish-like auto suggestions
@@ -143,22 +137,18 @@ plugins=(ansible     # aliases of note: a
 [ ! -d "$XDG_STATE_HOME/zsh" ] && mkdir -p "$XDG_STATE_HOME/zsh"
 [ ! -d "$XDG_STATE_HOME/oh-my-zsh" ] && mkdir -p "$XDG_STATE_HOME/oh-my-zsh"
 
-# Uncomment the following line to display red dots whilst waiting for completion.
-# COMPLETION_WAITING_DOTS="true"
-
 export ZSH=$XDG_STATE_HOME/oh-my-zsh
 source $ZSH/oh-my-zsh.sh
 
 unsetopt correct_all
 unsetopt correct
 
-# export ALTERNATE_EDITOR=""
-# export EDITOR="emacsclient -t"                  # $EDITOR should open in terminal
-# export VISUAL="emacsclient -c -a emacs"         # $VISUAL opens in GUI with non-daemon as alternate
+export EDITOR="emacs"                             # $EDITOR should open in terminal
 export VERSION_CONTROL=numbered
 
 HISTSIZE=1000000
 SAVEHIST=$HISTSIZE
+
 export HISTFILE="$XDG_STATE_HOME"/zsh/history
 
 setopt EXTENDED_HISTORY
@@ -173,6 +163,9 @@ compdef _hosts bsc
     source /usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
 
+#
+# Level-up our pager, if possible
+#
 if command -v bat &> /dev/null; then
     export BAT_THEME=Dracula
     export MANPAGER="sh -c 'col -bx | bat -l man -p'"
@@ -191,7 +184,9 @@ else
     alias tailf='tail -f'
 fi
 
-
+#
+# Level-up ls if possible
+#
 if command -v exa 1>/dev/null 2>&1; then
     unalias ll
 
@@ -219,7 +214,7 @@ if [[ -f /etc/motd ]]; then
 fi
 
 #
-# Enhanced history
+# Enhanced history.
 #   https://raehik.github.io/2014/10/12/record-additional-full-zsh-history/
 #
 zshaddhistory() {
@@ -248,20 +243,3 @@ if command -v mcfly &> /dev/null; then
     # export MCFLY_FUZZY=true
     source $ZDOTDIR/mcfly.zsh
 fi
-
-# add arch to prompt.  look at powrelevel10
-
-# if [ "${arch_name}" = "x86_64" ]; then
-#     if [ "$(sysctl -in sysctl.proc_translated)" = "1" ]; then
-#         echo "Running on Rosetta 2"
-#     else
-#         echo "Running on native Intel"
-#     fi 
-# elif [ "${arch_name}" = "arm64" ]; then
-#     echo "Running on ARM"
-# else
-#     echo "Unknown architecture: ${arch_name}"
-# fi
-# 
-# return
-
