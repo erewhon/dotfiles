@@ -11,6 +11,14 @@
 
 (package! nord-theme)
 
+;; from https://tecosaur.github.io/emacs-config/config.html#selectric
+(package! selectric-mode :pin "1840de71f7414b7cd6ce425747c8e26a413233aa")
+
+(use-package! selectric-mode
+  :commands selectric-mode)
+
+
+
 ;; To install a package directly from a remote git repo, you must specify a
 ;; `:recipe'. You'll find documentation on what `:recipe' accepts here:
 ;; https://github.com/raxod502/straight.el#the-recipe-format
