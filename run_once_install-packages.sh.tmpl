@@ -3,6 +3,8 @@
 #
 # Installs packages.  Runs only when script changes.
 #
+mkdir -p $HOME/.local/state/oh-my-zsh $HOME/.tmux/plugins/tpm $HOME/.config/tmux/plugins
+
 {{ if eq .chezmoi.os "linux" -}}
 echo sudo apt install ripgrep
 {{ else if eq .chezmoi.os "darwin" -}}
