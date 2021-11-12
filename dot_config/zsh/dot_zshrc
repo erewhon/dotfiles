@@ -70,6 +70,7 @@ path=(~/bin
       ~/.cargo/bin
       ~/.local/bin
       ~/.emacs.d/bin
+      ~/.krew/bin
       /usr/local/opt/python-3.9.7/bin
       ~/Library/Python/3.9/bin
       # /usr/local/bin
