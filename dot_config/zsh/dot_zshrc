@@ -120,7 +120,7 @@ plugins=(ansible     # aliases of note: a
                      #   grup, ggpull, glg, glgp, glo, glol,
                      #   gupa
          golang
-         gradle      # can just type 'gradle' and it will use wrapper
+         # gradle    # can just type 'gradle' and it will use wrapper
          httpie
          history
          kubectl
@@ -205,6 +205,16 @@ fi
 if command -v zoxide 1>/dev/null 2>&1; then
     eval "$(zoxide init zsh)"
 fi
+
+#
+# Kubenetes configuration.  ("N" modifier doesn't error if no match.)
+#
+export KUBECONFIG="$HOME/.kube/config"
+
+for file in $HOME/.kube/config-files/*.{yml,yaml}(N)
+do
+  export KUBECONFIG="$file:$KUBECONFIG"
+done
 
 #
 # Only show message of the day when it changes, otherwise suppress it.
