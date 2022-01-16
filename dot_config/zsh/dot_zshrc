@@ -193,11 +193,11 @@ if command -v exa 1>/dev/null 2>&1; then
     unalias ll
 
     function ll() {
-        exa -abghHl --time-style=long-iso --git --color=always "$@" | bat --style=plain
+        exa -abghHl --time-style=long-iso --group-directories-first --git --color=always "$@" | bat --style=plain
     }
 
     function lll() {
-        exa -abghHl --time-style=long-iso --extended --git --color=always "$@" | bat --style=plain
+        exa -abghHl --time-style=long-iso --group-directories-first --extended --git --color=always "$@" | bat --style=plain
     }
 
     alias tree='exa -abghHl --time-style=long-iso --tree --level=3 --color=always'
