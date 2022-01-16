@@ -189,6 +189,7 @@ fi
 # Level-up ls if possible
 #
 if command -v exa 1>/dev/null 2>&1; then
+    unalias l
     unalias ll
 
     function ll() {
@@ -200,6 +201,8 @@ if command -v exa 1>/dev/null 2>&1; then
     }
 
     alias tree='exa -abghHl --time-style=long-iso --tree --level=3 --color=always'
+
+    alias l=ll
 fi
 
 if command -v zoxide 1>/dev/null 2>&1; then
