@@ -257,3 +257,5 @@ if command -v mcfly &> /dev/null; then
     # export MCFLY_FUZZY=true
     source $ZDOTDIR/mcfly.zsh
 fi
+
+# source /Users/erewhon/.config/broot/launcher/bash/br
