@@ -5,6 +5,11 @@
 #
 mkdir -p $HOME/.local/state/oh-my-zsh $HOME/.tmux/plugins/tpm $HOME/.config/tmux/plugins
 
+# To set up tmux (at least on some machines):
+#.   mkdir -p .tmux/plugins/tpm
+#.   ln -sv .config/tmux/tmux.conf .tmux.conf
+#.   then C-o I
+
 {{ if eq .chezmoi.os "linux" -}}
 echo sudo apt install ripgrep
 {{ else if eq .chezmoi.os "darwin" -}}

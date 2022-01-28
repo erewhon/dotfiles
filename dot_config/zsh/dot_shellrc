@@ -69,20 +69,10 @@ if command -v fzf &> /dev/null; then
     }
 fi
 
-
 alias gupv='git pull --rebase --autostash -v'
 alias gw='git worktree'
 
 # gwb='git worktree add -b foo ../foo origin/master'
-
-# deprecate the below.  Switched to rg
-function gack() { 
-  ack -g $* 
-}
-
-function eack() { 
-  emacsclient -n $( ack -g $* ) 
-}
 
 # http://stackoverflow.com/questions/714421/what-is-an-easy-way-to-do-a-sorted-diff-between-two-files
 function diffs() {

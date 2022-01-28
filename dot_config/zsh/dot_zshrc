@@ -144,7 +144,7 @@ source $ZSH/oh-my-zsh.sh
 unsetopt correct_all
 unsetopt correct
 
-export EDITOR="emacs"                             # $EDITOR should open in terminal
+export EDITOR="vi"                             # $EDITOR should open in terminal.  Use vi rather than dealing with Emacs session issues
 export VERSION_CONTROL=numbered
 
 HISTSIZE=1000000
