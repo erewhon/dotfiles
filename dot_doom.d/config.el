@@ -30,7 +30,7 @@
 
 ;; If you use `org' and don't want your org files in the default location below,
 ;; change `org-directory'. It must be set before org loads!
-(setq org-directory "~/org/")
+(setq org-directory "~/Org/")
 
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
@@ -129,5 +129,28 @@
 ;; (setq desktop-restore-frames nil)                         ;; Don't save frame and window configuration
 
 ;;  (setq desktop-restore-eager 0))                            ;; eagerly restore no buffers; lazy-load all of them
+
+;; org-roam related things
+(after! org-roam
+  (setq org-roam-directory "~/Org/roam")
+
+  (add-hook 'after-init-hook 'org-roam-mode)
+
+  ;; Let's set up some org-roam capture templates
+  (setq org-roam-capture-templates
+        (quote (("d" "default" plain (function org-roam--capture-get-point)
+                 "%?"
+                 :file-name "%<%Y-%m-%d-%H%M%S>-${slug}"
+                 :head "#+title: ${title}\n"
+                 :unnarrowed t)
+                )))
+
+  ;; And now we set necessary variables for org-roam-dailies
+  (setq org-roam-dailies-capture-templates
+        '(("d" "default" entry
+           #'org-roam-capture--get-point
+           "* %?"
+           :file-name "daily/%<%Y-%m-%d>"
+           :head "#+title: %<%Y-%m-%d>\n\n"))))
 
 (setq company-idle-delay 1.0)
