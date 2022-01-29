@@ -24,4 +24,5 @@ Notes on XDG-compliance: https://wiki.archlinux.org/title/XDG_Base_Directory
 Prerequisites (to be installed eventually automatically):
 
     fortune zsh
-   
+
+Some more notes will be put in here eventually...
