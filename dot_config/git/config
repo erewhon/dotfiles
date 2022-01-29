@@ -1,7 +1,11 @@
 [user]
 	name = Steven Byrnes
 	email = steven@byrnes.org
-        signingkey = 81EA9B05BF749A95
+    signingkey = 81EA9B05BF749A95
+
+
+[commit]
+    gpgsign = true
 
 [rerere]
 	enabled = true
@@ -13,7 +17,7 @@
 	smudge = git-lfs smudge -- %f
 
 [pull]
-        ff = only
+    ff = only
 
 [diff]
     colorMoved = default
@@ -32,5 +36,6 @@
 
 [include]
      path = ~/.gitconfig-local
+
 [init]
 	defaultBranch = main
