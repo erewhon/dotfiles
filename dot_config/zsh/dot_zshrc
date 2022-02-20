@@ -205,8 +205,14 @@ if command -v exa 1>/dev/null 2>&1; then
     alias l=ll
 fi
 
+# zoxide = directory jumping utility
 if command -v zoxide 1>/dev/null 2>&1; then
     eval "$(zoxide init zsh)"
+fi
+
+# stern = kubernetes log viewer
+if command -v stern 1>/dev/null 2>&1; then
+    source <(stern --completion=zsh)
 fi
 
 #

@@ -18,3 +18,6 @@ export XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}
 
 export ZDOTDIR=${XDG_CONFIG_HOME}/zsh
 export ZSH_CACHE_DIR="${XDG_CACHE_HOME}/ohmyzsh"
+
+# Some applications need this here. <sigh>
+export PATH="/Library/Java/JavaVirtualMachines/jdk1.8.0_144.jdk/Contents/Home/bin:/Users/erewhon/go/bin:/Users/erewhon/bin:/Users/erewhon/.cargo/bin:/Users/erewhon/.local/bin:/Users/erewhon/.emacs.d/bin:/Users/erewhon/.krew/bin:/usr/local/opt/python-3.9.7/bin:/Users/erewhon/Library/Python/3.9/bin:/snap/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Applications/VMware Fusion.app/Contents/Public:/Library/TeX/texbin:/opt/X11/bin:/Library/Apple/usr/bin:/Library/Frameworks/Mono.framework/Versions/Current/Commands:/Library/Java/JavaVirtualMachines/jdk1.8.0_144.jdk/Contents/Home/bin"
