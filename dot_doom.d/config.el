@@ -142,51 +142,52 @@
 ;; References:
 ;; 2022-01-29: https://github.com/jethrokuan/dots/blob/master/.doom.d/config.el#L375
 
-(after! org-roam
-  (setq org-roam-directory (file-truename "~/Org/roam" ))
-  (setq org-roam-dailies-directory (file-truename "~/Org/roam/journal" ))
+(setq org-roam-directory (file-truename "~/Org/roam" ))
+(setq org-roam-dailies-directory (file-truename "~/Org/roam/journal" ))
 
-  (add-hook 'after-init-hook 'org-roam-mode)
+(add-hook 'after-init-hook 'org-roam-mode)
 
-  (org-roam-db-autosync-mode)
-  ;;
-  ;; Key bindings
-  (map!
-   :leader
-   :prefix "n"
-   :desc "Open note" "f" #'org-roam-node-find
-   :desc "Insert into ID note" "i" #'org-roam-node-insert
-   :desc "Capture a note" "n" #'org-roam-capture
-   :desc "Journal" "j" #'org-roam-dailies-capture-today
-   :desc "Journal directory" "J" #'org-roam-dailies-find-directory
-   :desc "Note graph" "g" #'org-roam-graph)
+(org-roam-db-autosync-mode)
 
-  ;;(map!
-  ;; :leader
-  ;; :desc "Capture a note"
-  ;; "n n" #'org-roam-capture)
+;;
+;; Key bindings
+(map!
+ :leader
+ :prefix "n"
+ :desc "Open note" "f" #'org-roam-node-find
+ :desc "Insert into ID note" "i" #'org-roam-node-insert
+ :desc "Capture a note" "n" #'org-roam-capture
+ :desc "Journal" "j" #'org-roam-dailies-capture-today
+ :desc "Journal directory" "J" #'org-roam-dailies-find-directory
+ :desc "Note graph" "g" #'org-roam-graph)
+
+;;(map!
+;; :leader
+;; :desc "Capture a note"
+;; "n n" #'org-roam-capture)
 
 
-  ;; Let's set up some org-roam capture templates
-  ;;(setq org-roam-capture-templates
-  ;;      '(("d" "default" plain "%?" :target
-  ;;        (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
-  ;;        :unnarrowed t)))
+;; Let's set up some org-roam capture templates
+;;(setq org-roam-capture-templates
+;;      '(("d" "default" plain "%?" :target
+;;        (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
+;;        :unnarrowed t)))
 
-  (setq org-roam-capture-templates
-        '(("d" "default" plain "%?" :target
-          (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
-          :unnarrowed t)
-           ("e" "private" plain "%?" :target
-          (file+head "%<%Y%m%d%H%M%S>-${slug}.org.gpg" "#+title: ${title}\n")
-          :unnarrowed t)
-          ))
+(setq org-roam-capture-templates
+      '(("d" "default" plain "%?" :target
+         (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
+         :unnarrowed t)
+        ("e" "private" plain "%?" :target
+         (file+head "%<%Y%m%d%H%M%S>-${slug}.org.gpg" "#+title: ${title}\n")
+         :unnarrowed t)
+        ))
 
-  (setq org-roam-dailies-capture-templates
-        '(("d" "default" entry
-           "* %?"
-           :target (file+head "%<%Y-%m-%d>.org"
-                              "#+title: journal-%<%Y-%m-%d>\n"))))
+(setq org-roam-dailies-capture-templates
+      '(("d" "default" entry
+         "* %?"
+         :target (file+head "%<%Y-%m-%d>.org"
+                            "#+title: journal-%<%Y-%m-%d>\n"))))
+
 ;;  (setq org-roam-capture-templates
 ;;        (quote (("d" "default" plain (function org-roam--capture-gefffft-point)
 ;;                 "%?"
@@ -202,9 +203,10 @@
 ;;           "* %?"
 ;;           :file-name "daily/%<%Y-%m-%d>"
 ;;           :head "#+title: %<%Y-%m-%d>\n\n")))
-  )
 
 (setq company-idle-delay 1.0)
+
+;; (add-hook 'minibuffer-setup-hook #'vertico-repeat-save)
 
 ;; keys: map!, define-key!, ec
 ;; o
