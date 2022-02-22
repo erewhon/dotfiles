@@ -60,6 +60,11 @@
 
 
 ;;
+;; Magit config
+;;
+(setq magit-revision-show-gravatars '("^Author:     " . "^Commit:     "))
+
+;;
 ;; Select properties brought over from old elisp.org
 ;;
 
