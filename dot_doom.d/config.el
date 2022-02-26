@@ -170,6 +170,11 @@
  :desc "Journal directory" "J" #'org-roam-dailies-find-directory
  :desc "Note graph" "g" #'org-roam-graph)
 
+(map!
+ :leader
+ :prefix "o"
+ :desc "Open vterm" "v" #'vterm)
+
 ;;(map!
 ;; :leader
 ;; :desc "Capture a note"
