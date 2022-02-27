@@ -165,6 +165,7 @@
  :prefix "n"
  :desc "Open note" "f" #'org-roam-node-find
  :desc "Insert into ID note" "i" #'org-roam-node-insert
+ :desc "Backlinks" "l" #'org-roam-buffer-toggle
  :desc "Capture a note" "n" #'org-roam-capture
  :desc "Journal" "j" #'org-roam-dailies-capture-today
  :desc "Journal directory" "J" #'org-roam-dailies-find-directory
