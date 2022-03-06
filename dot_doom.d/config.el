@@ -80,6 +80,11 @@
 
 (set-frame-parameter (selected-frame) 'alpha '(97 . 97))
 
+;;
+;; Enhanced window management
+;;
+(winner-mode 1)
+
 ;; There is also a mac-right-option-modifier setting. I could change that to
 ;; Hyper? Would it be possible to change the doom prefix to Hyber?
 ;;
@@ -100,6 +105,23 @@
 (setq calendar-location-name "Houston, TX")
 (setq calendar-latitude 29.7)
 (setq calendar-longitude -95.3)
+
+;;
+;;
+;;
+(use-package blamer
+  :bind (("s-i" . blamer-show-commit-info))
+  :defer 20
+  :custom
+  (blamer-idle-time 0.3)
+  (blamer-min-offset 70)
+  :custom-face
+  (blamer-face ((t :foreground "#7a88cf"
+                    :background nil
+                    :height 140
+                    :italic t)))
+  :config
+  (global-blamer-mode 1))
 
 ;;
 ;; Remember desktop buffers, and save periodically
@@ -175,6 +197,13 @@
  :leader
  :prefix "o"
  :desc "Open vterm" "v" #'vterm)
+
+(map!
+ :leader
+ :desc "Navigation left"  "<left>"  #'windmove-left
+ :desc "Navigation right" "<right>" #'windmove-right
+ :desc "Navigation up"    "<up>"    #'windmove-up
+ :desc "Navigation down"  "<down>"  #'windmove-down)
 
 ;;(map!
 ;; :leader
