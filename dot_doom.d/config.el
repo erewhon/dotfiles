@@ -106,22 +106,22 @@
 (setq calendar-latitude 29.7)
 (setq calendar-longitude -95.3)
 
-;;
-;;
-;;
-(use-package blamer
-  :bind (("s-i" . blamer-show-commit-info))
-  :defer 20
-  :custom
-  (blamer-idle-time 0.3)
-  (blamer-min-offset 70)
-  :custom-face
-  (blamer-face ((t :foreground "#7a88cf"
-                    :background nil
-                    :height 140
-                    :italic t)))
-  :config
-  (global-blamer-mode 1))
+;;;
+;;; Overlay git blame
+;;;
+;; (use-package blamer
+;;   :bind (("s-i" . blamer-show-commit-info))
+;;   :defer 20
+;;   :custom
+;;   (blamer-idle-time 0.3)
+;;   (blamer-min-offset 70)
+;;   :custom-face
+;;   (blamer-face ((t :foreground "#7a88cf"
+;;                     :background nil
+;;                     :height 140
+;;                     :italic t)))
+;;   :config
+;;   (global-blamer-mode 1))
 
 ;;
 ;; Remember desktop buffers, and save periodically
