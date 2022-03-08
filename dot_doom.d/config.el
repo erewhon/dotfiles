@@ -161,6 +161,11 @@
 
 ;;  (setq desktop-restore-eager 0))                            ;; eagerly restore no buffers; lazy-load all of them
 
+;;;
+;;; Org-mode tweaking
+;;;
+(add-hook 'org-mode-hook (lambda () (display-line-numbers-mode -1)))
+
 ;; org babel
 ;;(require 'org-tempo)
 ;;(add-to-list 'org-structure-template-alist '("sh" . "src shell"))
@@ -249,6 +254,21 @@
 ;;           :head "#+title: %<%Y-%m-%d>\n\n")))
 
 (setq company-idle-delay 1.0)
+
+;;
+;; Custom focus mode for writing.  Olivetti mode.
+;; todo:
+;; - buffer-local variable for the writing mode
+;; - (doom/toggle-line-numbers) - nil, t
+;;
+(defun sb/toggle-writing-mode ()
+  "Stuff."
+  (interactive)
+  ;;(doom/toggle-line-numbers) ;; toggle between nil and t, otherwise manually C-c t l
+  (olivetti-mode 'toggle)
+  )
+
+;; with flair
 
 ;; (add-hook 'minibuffer-setup-hook #'vertico-repeat-save)
 
