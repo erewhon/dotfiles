@@ -18,8 +18,10 @@
    '(rational-ui-default-font
      '(:font "JetBrains Mono" :weight 'light :height 185)))
 
-(load-theme 'doom-nord-light t)
-;;(load-theme 'doom-one-light t)
+(load-theme 'doom-one-light t)
+
+(setq delete-old-versions 1)
+
 
 (message "Ready!")
 
