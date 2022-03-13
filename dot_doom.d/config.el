@@ -1,5 +1,10 @@
 ;;; $DOOMDIR/config.el -*- lexical-binding: t; -*-
 
+;;; Built-in keybinds that I want to remember:
+;;;
+;;; C-x C-j    Dired jump
+;;;
+
 ;; Place your private configuration here! Remember, you do not need to run 'doom
 ;; sync' after modifying this file!
 
@@ -267,6 +272,31 @@
   ;;(doom/toggle-line-numbers) ;; toggle between nil and t, otherwise manually C-c t l
   (olivetti-mode 'toggle)
   )
+
+;;
+;; Development-related configuration and keybinding tweaks
+;;
+(defun custom-reindent-eol()
+  (local-set-key (kbd "RET") 'reindent-then-newline-and-indent)
+  (local-set-key (kbd ";") (lambda ()
+                             (interactive)
+                             (insert ";")
+                             (reindent-then-newline-and-indent))))
+
+(add-hook 'rjsx-mode-hook 'custom-reindent-eol)
+
+;;(setq auto-indent-key-for-end-of-line-then-newline "<M-return>")
+;;(setq auto-indent-key-for-end-of-line-insert-char-then-newline "<M-S-return>")
+
+;;(use-package auto-indent-mode
+;;  ;; :bind (("s-i" . blamer-show-commit-info))
+;;  ;;:defer 20
+;;  ;;:custom
+;;  ;;(blamer-idle-time 0.3)
+;;  ;;(blamer-min-offset 70)
+;;  :config
+;;  (auto-indent-global-mode))
+
 
 ;; with flair
 
