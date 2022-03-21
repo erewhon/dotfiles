@@ -10,6 +10,7 @@
 
 ;; other inspirations:
 ;; - Emacs from Scratch (https://github.com/daviwil/emacs-from-scratch/)
+;; - https://zzamboni.org/post/my-doom-emacs-configuration-with-commentary/#org-visual-settings
 
 
 ;; Some functionality uses this to identify you, e.g. GPG configuration, email
@@ -35,6 +36,9 @@
 ;; `load-theme' function. This is the default:
 ;;(setq doom-theme 'doom-one)
 (setq doom-theme 'nord)
+
+;; Add some bling to Doom Dashboard!
+(setq fancy-splash-image "~/Documents/Pictures/Emacs/doom-emacs-color.png")
 
 ;; If you use `org' and don't want your org files in the default location below,
 ;; change `org-directory'. It must be set before org loads!
@@ -169,7 +173,15 @@
 ;;;
 ;;; Org-mode tweaking
 ;;;
-(add-hook 'org-mode-hook (lambda () (display-line-numbers-mode -1)))
+(add-hook 'org-mode-hook (lambda () (display-line-numbers-mode -1))) ;; Hide line numbers
+(add-hook 'org-mode-hook #'mixed-pitch-mode)
+(after! org (setq org-hide-emphasis-markers t))  ;; Show emphasis without markup characters
+(add-hook! org-mode :append
+           #'visual-line-mode
+           #'variable-pitch-mode)                ;; Switch to variable pitch
+;;(add-hook! org-mode (electric-indent-local-mode -1))
+
+(add-hook! org-mode :append #'org-appear-mode)  ;; Show emphasis markers when cursor over text
 
 ;; org babel
 ;;(require 'org-tempo)
@@ -296,6 +308,24 @@
 ;;  ;;(blamer-min-offset 70)
 ;;  :config
 ;;  (auto-indent-global-mode))
+
+;; Variable font pitch for org mode
+(defun sb/set-buffer-variable-pitch ()
+  "Set variable pitch for org mode, and change certain faces to fixed pitch."
+  (interactive)
+  (variable-pitch-mode t)
+  (setq line-spacing 3)
+  (set-face-attribute 'org-table nil :inherit 'fixed-pitch)
+  (set-face-attribute 'org-code nil :inherit 'fixed-pitch)
+  (set-face-attribute 'org-block nil :inherit 'fixed-pitch))
+
+;(set-face-attribute 'org-block-background nil :inherit 'fixed-pitch)
+
+;;(add-hook 'org-mode-hook 'sb/set-buffer-variable-pitch)
+;;(add-hook 'eww-mode-hook 'set-buffer-variable-pitch)
+;;(add-hook 'markdown-mode-hook 'set-buffer-variable-pitch)
+;;(add-hook 'Info-mode-hook 'set-buffer-variable-pitch)
+
 
 
 ;; with flair
