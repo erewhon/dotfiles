@@ -43,7 +43,8 @@
 ;; - brew install font-et-book
 ;;
 (setq doom-font (font-spec :family "JetBrainsMono Nerd Font" :size 18)
-      doom-variable-pitch-font (font-spec :family "ETBembo" :size 18))
+      doom-variable-pitch-font (font-spec :family "ETBembo" :size 18)
+      doom-big-font (font-spec :family "JetBrainsMono Nerd Font" :size 28))
 
 ;; Add some bling to Doom Dashboard!
 (setq fancy-splash-image "~/Documents/Pictures/Emacs/doom-emacs-color.png")

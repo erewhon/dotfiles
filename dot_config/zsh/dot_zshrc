@@ -61,6 +61,7 @@ fi
 #
 export MANPATH="/usr/local/man:$MANPATH"
 export DISABLE_AUTO_UPDATE="true"         # Do not auto update oh my zsh.  Chezmoi manages it.
+export GPG_TTY=$(tty)
 
 # add elements to path, uniquely
 typeset -U path
