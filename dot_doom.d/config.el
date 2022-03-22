@@ -5,6 +5,11 @@
 ;;; C-x C-j    Dired jump
 ;;;
 
+;;
+;; brew install font-et-book  ;; To install fonts:
+;; brew install shellcheck graphviz
+;; brew install --cask basictex   -or- brew install --cask mactex
+
 ;; Place your private configuration here! Remember, you do not need to run 'doom
 ;; sync' after modifying this file!
 
@@ -38,10 +43,6 @@
 
 (setq doom-theme 'nord)
 
-;;
-;; To install fonts:
-;; - brew install font-et-book
-;;
 (setq doom-font (font-spec :family "JetBrainsMono Nerd Font" :size 18)
       doom-variable-pitch-font (font-spec :family "ETBembo" :size 18)
       doom-big-font (font-spec :family "JetBrainsMono Nerd Font" :size 28))
@@ -54,6 +55,8 @@
 (setq org-directory "~/Org/")
 
 (setq org-src-fontify-natively t)   ;; Syntax highlight source blocks!
+
+(setq org-image-actual-width nil)
 
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
