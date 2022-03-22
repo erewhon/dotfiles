@@ -35,7 +35,15 @@
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
 ;;(setq doom-theme 'doom-one)
+
 (setq doom-theme 'nord)
+
+;;
+;; To install fonts:
+;; - brew install font-et-book
+;;
+(setq doom-font (font-spec :family "JetBrainsMono Nerd Font" :size 18)
+      doom-variable-pitch-font (font-spec :family "ETBembo" :size 18))
 
 ;; Add some bling to Doom Dashboard!
 (setq fancy-splash-image "~/Documents/Pictures/Emacs/doom-emacs-color.png")
@@ -77,8 +85,8 @@
 ;; Select properties brought over from old elisp.org
 ;;
 
-(set-face-attribute 'default nil :family "JetBrainsMono Nerd Font")
-(set-face-attribute 'default nil :height 140)
+;;(set-face-attribute 'default nil :family "JetBrainsMono Nerd Font")
+;;(set-face-attribute 'default nil :height 140)
 
 (cond
  ((string-equal system-type "darwin") ; Mac OS X
