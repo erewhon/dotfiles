@@ -2,7 +2,8 @@
 
 ;;; Built-in keybinds that I want to remember:
 ;;;
-;;; C-x C-j    Dired jump
+;;; C-x C-j      Dired jump
+;;; C-x 8 <ret>  For Emoji!
 ;;;
 
 ;;
@@ -17,9 +18,6 @@
 ;; - Emacs from Scratch (https://github.com/daviwil/emacs-from-scratch/)
 ;; - https://zzamboni.org/post/my-doom-emacs-configuration-with-commentary/#org-visual-settings
 
-
-;; Some functionality uses this to identify you, e.g. GPG configuration, email
-;; clients, file templates and snippets.
 (setq user-full-name "Steven Byrnes"
       user-mail-address "steven@byrnes.org")
 
@@ -50,11 +48,137 @@
 ;; Add some bling to Doom Dashboard!
 (setq fancy-splash-image "~/Documents/Pictures/Emacs/doom-emacs-color.png")
 
-;; If you use `org' and don't want your org files in the default location below,
-;; change `org-directory'. It must be set before org loads!
+;;;
+;;; Org-mode and related configuration
+;;;
 (setq org-directory "~/Org/")
-
 (setq org-src-fontify-natively t)   ;; Syntax highlight source blocks!
+(setq org-startup-with-inline-images t)
+
+;;;
+;;; Org-mode tweaking
+;;;
+(add-hook 'org-mode-hook (lambda () (display-line-numbers-mode -1))) ;; Hide line numbers
+(add-hook 'org-mode-hook #'mixed-pitch-mode)
+(after! org (setq org-hide-emphasis-markers t))  ;; Show emphasis without markup characters
+(add-hook! org-mode :append
+           #'visual-line-mode
+           #'variable-pitch-mode)                ;; Switch to variable pitch
+;;(add-hook! org-mode (electric-indent-local-mode -1))
+
+(add-hook! org-mode :append #'org-appear-mode)  ;; Show emphasis markers when cursor over text
+
+;; org agenda
+
+(setq org-agenda-files '("~/Org/work.org"
+                         "~/Org/personal.org"))
+;; (setq org-agenda-log-mode-items (quote (clock)))
+
+(setq org-agenda-start-with-log-mode t)
+(setq org-log-done 'time)
+;;(setq org-log-done 'note)
+(setq org-log-into-drawer t)
+
+(setq org-tag-alist
+      '((:startgroup)
+        (:endgroup)
+        ;;("" . ?E)
+        ("@daily" . ?D)
+        ("@weekly" . ?W)
+        ("@monthly" . ?M)
+        ("@quarterly" . ?Q)
+        ("@yearly" . ?Y)
+        ("idea" . ?i)
+        ("planning" . ?p)
+        ("releases" . ?R)
+        ("research" . ?r)
+        ("shelved" . ?s)
+        ("writing" . ?w)))
+
+
+;;((sequence "TODO(t)" "PROJ(p)" "LOOP(r)" "STRT(s)" "WAIT(w)" "HOLD(h)" "IDEA(i)" "|" "DONE(d)" "KILL(k)")
+;; (sequence "[ ](T)" "[-](S)" "[?](W)" "|" "[X](D)")
+;; (sequence "|" "OKAY(o)" "YES(y)" "NO(n)"))
+
+(setq org-todo-keywords (quote ((sequence "TODO(t)" "NEXT(n)" "DOING(D)" "|" "DONE(d@/!)")
+                                (sequence "WAITING(w@/!)" "SOMEDAY(s!)" "|" "CANCELLED(c@/!)" "PHONE"))))
+
+;; org babel
+;;(require 'org-tempo)
+;;(add-to-list 'org-structure-template-alist '("sh" . "src shell"))
+;;(add-to-list 'org-structure-template-alist '("el" . "src emacs-lisp"))
+
+;;
+;; org-roam related things
+;;
+;; References:
+;; 2022-01-29: https://github.com/jethrokuan/dots/blob/master/.doom.d/config.el#L375
+
+(setq org-roam-directory (file-truename "~/Org/roam" ))
+(setq org-roam-dailies-directory (file-truename "~/Org/roam/journal" ))
+
+(add-hook 'after-init-hook 'org-roam-mode)
+
+(org-roam-db-autosync-mode)
+
+;;
+;; Key bindings
+;;
+(map!
+ :leader
+ :prefix "n"
+ :desc "Open note" "f" #'org-roam-node-find
+ :desc "Insert into ID note" "i" #'org-roam-node-insert
+ :desc "Backlinks" "l" #'org-roam-buffer-toggle
+ :desc "Capture a note" "n" #'org-roam-capture
+ :desc "Journal" "j" #'org-roam-dailies-capture-today
+ :desc "Journal directory" "J" #'org-roam-dailies-find-directory
+ :desc "Note graph" "g" #'org-roam-graph)
+
+;;(map!
+;; :leader
+;; :desc "Capture a note"
+;; "n n" #'org-roam-capture)
+
+
+;; Let's set up some org-roam capture templates
+;;(setq org-roam-capture-templates
+;;      '(("d" "default" plain "%?" :target
+;;        (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
+;;        :unnarrowed t)))
+
+(setq org-roam-capture-templates
+      '(("d" "default" plain "%?" :target
+         (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
+         :unnarrowed t)
+        ("e" "private" plain "%?" :target
+         (file+head "%<%Y%m%d%H%M%S>-${slug}.org.gpg" "#+title: ${title}\n")
+         :unnarrowed t)
+        ))
+
+(setq org-roam-dailies-capture-templates
+      '(("d" "default" entry
+         "* %?"
+         :target (file+head "%<%Y-%m-%d>.org"
+                            "#+title: journal-%<%Y-%m-%d>\n"))))
+
+;;  (setq org-roam-capture-templates
+;;        (quote (("d" "default" plain (function org-roam--capture-gefffft-point)
+;;                 "%?"
+;;                 :file-name "%<%Y-%m-%d-%H%M%S>-${slug}"
+;;                 :head "#+title: ${title}\n"
+;;                 :unnarrowed t)
+;;                )))
+
+  ;; And now we set necessary variables for org-roam-dailies
+;;  (setq org-roam-dailies-capture-templates
+;;        '(("d" "default" entry
+;;           #'org-roam-capture--get-point
+;;           "* %?"
+;;           :file-name "daily/%<%Y-%m-%d>"
+;;           :head "#+title: %<%Y-%m-%d>\n\n")))
+
+
 
 (setq org-image-actual-width nil)
 
@@ -88,10 +212,6 @@
 ;;
 ;; Select properties brought over from old elisp.org
 ;;
-
-;;(set-face-attribute 'default nil :family "JetBrainsMono Nerd Font")
-;;(set-face-attribute 'default nil :height 140)
-
 (cond
  ((string-equal system-type "darwin") ; Mac OS X
   (progn
@@ -182,51 +302,6 @@
 
 ;;  (setq desktop-restore-eager 0))                            ;; eagerly restore no buffers; lazy-load all of them
 
-;;;
-;;; Org-mode tweaking
-;;;
-(add-hook 'org-mode-hook (lambda () (display-line-numbers-mode -1))) ;; Hide line numbers
-(add-hook 'org-mode-hook #'mixed-pitch-mode)
-(after! org (setq org-hide-emphasis-markers t))  ;; Show emphasis without markup characters
-(add-hook! org-mode :append
-           #'visual-line-mode
-           #'variable-pitch-mode)                ;; Switch to variable pitch
-;;(add-hook! org-mode (electric-indent-local-mode -1))
-
-(add-hook! org-mode :append #'org-appear-mode)  ;; Show emphasis markers when cursor over text
-
-;; org babel
-;;(require 'org-tempo)
-;;(add-to-list 'org-structure-template-alist '("sh" . "src shell"))
-;;(add-to-list 'org-structure-template-alist '("el" . "src emacs-lisp"))
-
-;; make key "n j" go to journal!
-
-;; org-roam related things
-
-;; References:
-;; 2022-01-29: https://github.com/jethrokuan/dots/blob/master/.doom.d/config.el#L375
-
-(setq org-roam-directory (file-truename "~/Org/roam" ))
-(setq org-roam-dailies-directory (file-truename "~/Org/roam/journal" ))
-
-(add-hook 'after-init-hook 'org-roam-mode)
-
-(org-roam-db-autosync-mode)
-
-;;
-;; Key bindings
-(map!
- :leader
- :prefix "n"
- :desc "Open note" "f" #'org-roam-node-find
- :desc "Insert into ID note" "i" #'org-roam-node-insert
- :desc "Backlinks" "l" #'org-roam-buffer-toggle
- :desc "Capture a note" "n" #'org-roam-capture
- :desc "Journal" "j" #'org-roam-dailies-capture-today
- :desc "Journal directory" "J" #'org-roam-dailies-find-directory
- :desc "Note graph" "g" #'org-roam-graph)
-
 (map!
  :leader
  :prefix "o"
@@ -238,49 +313,6 @@
  :desc "Navigation right" "<right>" #'windmove-right
  :desc "Navigation up"    "<up>"    #'windmove-up
  :desc "Navigation down"  "<down>"  #'windmove-down)
-
-;;(map!
-;; :leader
-;; :desc "Capture a note"
-;; "n n" #'org-roam-capture)
-
-
-;; Let's set up some org-roam capture templates
-;;(setq org-roam-capture-templates
-;;      '(("d" "default" plain "%?" :target
-;;        (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
-;;        :unnarrowed t)))
-
-(setq org-roam-capture-templates
-      '(("d" "default" plain "%?" :target
-         (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
-         :unnarrowed t)
-        ("e" "private" plain "%?" :target
-         (file+head "%<%Y%m%d%H%M%S>-${slug}.org.gpg" "#+title: ${title}\n")
-         :unnarrowed t)
-        ))
-
-(setq org-roam-dailies-capture-templates
-      '(("d" "default" entry
-         "* %?"
-         :target (file+head "%<%Y-%m-%d>.org"
-                            "#+title: journal-%<%Y-%m-%d>\n"))))
-
-;;  (setq org-roam-capture-templates
-;;        (quote (("d" "default" plain (function org-roam--capture-gefffft-point)
-;;                 "%?"
-;;                 :file-name "%<%Y-%m-%d-%H%M%S>-${slug}"
-;;                 :head "#+title: ${title}\n"
-;;                 :unnarrowed t)
-;;                )))
-
-  ;; And now we set necessary variables for org-roam-dailies
-;;  (setq org-roam-dailies-capture-templates
-;;        '(("d" "default" entry
-;;           #'org-roam-capture--get-point
-;;           "* %?"
-;;           :file-name "daily/%<%Y-%m-%d>"
-;;           :head "#+title: %<%Y-%m-%d>\n\n")))
 
 (setq company-idle-delay 1.0)
 
