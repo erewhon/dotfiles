@@ -180,6 +180,18 @@
 
 
 
+(setq ;;org-startup-indented t
+      ;;org-bullets-bullet-list '(" ") ;; no bullets, needs org-bullets package
+      org-ellipsis "  " ;; folding symbol
+      org-pretty-entities t
+      ;;org-hide-emphasis-markers t
+      ;; show actually italicized text instead of /italicized text/
+      ;;org-agenda-block-separator ""
+      ;;org-fontify-whole-heading-line t
+      ;;org-fontify-done-headline t
+      ;;org-fontify-quote-and-verse-blocks t
+      )
+
 (setq org-image-actual-width nil)
 
 ;; This determines the style of line numbers in effect. If set to `nil', line

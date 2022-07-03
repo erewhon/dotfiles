@@ -3,11 +3,12 @@ os_name="$(uname -s)"
 
 if [[ "${os_name}" == "Darwin" ]]; then
     # MacOS.  Distinguish between M1 and x86.
+    JULIA=/Applications/Julia-1.8.app/Contents/Resources/julia
     if [[ "${arch_name}" == "arm64" ]]; then
         export HOMEBREW_PREFIX="/opt/homebrew";
         export HOMEBREW_CELLAR="/opt/homebrew/Cellar";
         export HOMEBREW_REPOSITORY="/opt/homebrew";
-        export PATH="/opt/homebrew/bin:/opt/homebrew/sbin${PATH+:$PATH}";
+        export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${JULIA}/bin${PATH+:$PATH}";
         export MANPATH="/opt/homebrew/share/man${MANPATH+:$MANPATH}:";
         export INFOPATH="/opt/homebrew/share/info:${INFOPATH:-}";
     else
@@ -17,6 +18,11 @@ if [[ "${os_name}" == "Darwin" ]]; then
         export PATH="/usr/local/bin:/usr/local/sbin${PATH+:$PATH}";
         export MANPATH="/usr/local/share/man${MANPATH+:$MANPATH}:";
         export INFOPATH="/usr/local/share/info:${INFOPATH:-}";
+    fi
+
+    # MacOS has a problem with tmux-256color
+    if [[ "$TERM" == "tmux-256color" ]]; then
+        TERM="screen-256color"
     fi
 else
     # For Linux and others, we add /usr/local/bin and /usr/local/sbin unconditionally
@@ -62,6 +68,7 @@ fi
 export MANPATH="/usr/local/man:$MANPATH"
 export DISABLE_AUTO_UPDATE="true"         # Do not auto update oh my zsh.  Chezmoi manages it.
 export GPG_TTY=$(tty)
+export LEDGER_FILE=$HOME/Family/Finances/Accounting/main.journal
 
 # add elements to path, uniquely
 typeset -U path
