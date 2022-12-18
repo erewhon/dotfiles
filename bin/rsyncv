@@ -1,0 +1,36 @@
+#!/usr/bin/env perl    # -*- Mode: perl-mode -*-
+# From https://unix.stackexchange.com/questions/252871/is-it-possible-to-show-rsync-output-on-a-single-line
+
+# Custom progress wrapper for rsync
+
+use 5.012;
+use strict;
+use warnings;
+use autodie;
+use IPC::Run qw/run start pump finish harness/;
+
+my $RSYNC=`which rsync`; # Try to get rsync location from PATH
+chomp $RSYNC;
+
+my ($in,$out); # Input and output buffers
+my $h = harness [ $RSYNC, "--progress", @ARGV ], '<pty<', \$in, '>pty>', \$out;
+
+local $| = 1; # Autoflush output
+print "\n\n\e[2A\e[s"; # Make room and save cursor position
+my ($file, $status) = ('',''); # Will hold filename and status lines
+
+while ($h->pump) { parse() }
+parse(); # Don't miss leftover output
+
+$h->finish;
+exit $h->result; # Pass through the exit code from rsync
+
+# Parse and display file/status lines from rsync output
+sub parse {
+    for (split /[\n\r]+/, $out) {
+        $file = $_ if /^\S/;
+        $status = $_ if /^\s/;
+        print "\e[u\e[0J$file\n$status\n";
+    }
+    $out = ''; # Clear output for next pump
+}
