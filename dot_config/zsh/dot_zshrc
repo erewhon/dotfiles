@@ -199,18 +199,29 @@ fi
 if command -v exa 1>/dev/null 2>&1; then
     unalias l
     unalias ll
+    unalias ls
+
+    export EXA_GRID_ROWS=30
+
+    function ls() {
+        exa --icons --all --group-directories-first --grid "$@"
+    }
 
     function ll() {
-        exa -abghHl --time-style=long-iso --group-directories-first --git --color=always "$@" | bat --style=plain
+        exa -abghHl --time-style=long-iso --group-directories-first            --git --grid --color=always "$@"
     }
 
     function lll() {
-        exa -abghHl --time-style=long-iso --group-directories-first --extended --git --color=always "$@" | bat --style=plain
+        exa -abghHl --time-style=long-iso --group-directories-first --extended --git --grid --color=always "$@" | bat --style=plain
     }
 
     alias tree='exa -abghHl --time-style=long-iso --tree --level=3 --color=always'
 
     alias l=ll
+fi
+
+if command -v duf 1>/dev/null 2>&1; then
+   alias df=duf
 fi
 
 # zoxide = directory jumping utility
@@ -294,3 +305,6 @@ if command -v mcfly &> /dev/null; then
 fi
 
 # source /Users/erewhon/.config/broot/launcher/bash/br
+
+# todo : make sure we check if ASDF is in place first!
+. $(brew --prefix asdf)/libexec/asdf.sh
