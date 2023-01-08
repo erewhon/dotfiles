@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+yt-dlp -ciw \
+    --write-info-json                             \
+    --write-description                           \
+    --write-playlist-metafiles                    \
+    --write-comments                              \
+    --write-all-thumbnails                        \
+    --write-subs                                  \
+    --live-from-start                             \
+    -k \
+    -o "%(title)s.%(ext)s"                        \
+    -v "$@"
