@@ -8,6 +8,7 @@ yt-dlp -ciw \
     --write-all-thumbnails                        \
     --write-subs                                  \
     --live-from-start                             \
-    -k \
+    --wait-for-video 15                           \
+    -k                                            \
     -o "%(title)s.%(ext)s"                        \
     -v "$@"

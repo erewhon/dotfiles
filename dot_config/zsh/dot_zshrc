@@ -79,6 +79,7 @@ path=(~/bin
       ~/.local/bin
       ~/.config/doom-emacs/bin
       ~/.krew/bin
+      ~/.rd/bin
       /usr/local/opt/python-3.9.7/bin
       ~/Library/Python/3.9/bin
       # /usr/local/bin
