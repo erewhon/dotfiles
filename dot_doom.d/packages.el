@@ -14,8 +14,8 @@
 ;; from https://tecosaur.github.io/emacs-config/config.html#selectric
 (package! selectric-mode :pin "1840de71f7414b7cd6ce425747c8e26a413233aa")
 
-(use-package! selectric-mode
-  :commands selectric-mode)
+;;; (use-package! selectric-mode
+;;;   :commands selectric-mode)
 
 (package! olivetti)
 

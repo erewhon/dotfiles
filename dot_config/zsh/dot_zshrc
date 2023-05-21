@@ -85,6 +85,7 @@ path=(~/bin
       # /usr/local/bin
       # /usr/local/sbin
       /snap/bin
+      /opt/homebrew/opt/postgresql@15/bin
       $path)
 
 #
@@ -120,8 +121,7 @@ setopt AUTO_CD                       # You can just type a directory and CD ther
 #   $JIRA_RAPID_BOARD - Set to true if you use Rapid Board
 #   $JIRA_DEFAULT_ACTION - Action to do when jira is called with no arguments; defaults to "new"
 
-plugins=(ansible     # aliases of note: a
-         aws
+plugins=(aws
          brew        # aliases of note: brews, bubo, bubu
          chucknorris # chuck, chuck_cow
          docker
@@ -129,16 +129,13 @@ plugins=(ansible     # aliases of note: a
                      #   grup, ggpull, glg, glgp, glo, glol,
                      #   gupa
          golang
-         # gradle    # can just type 'gradle' and it will use wrapper
          httpie
          history
          kubectl
-         microk8s
          mosh
          npm
          ripgrep
          tmux
-         yarn
          zsh-autosuggestions   # Fish-like auto suggestions
         )
 
