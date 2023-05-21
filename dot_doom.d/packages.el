@@ -28,6 +28,14 @@
   :recipe (:host github
            :repo "awth13/org-appear"))
 
+
+;; So we aren't putting secrets in our public dotfiles,
+;; create ~/.authinfo with the following:
+;;
+;;    machine openai.com login apikey password <token_from_openai>
+;;
+(package! gptel)
+
 ;; (package! auto-indent-mode)
 
 ;; To install a package directly from a remote git repo, you must specify a
