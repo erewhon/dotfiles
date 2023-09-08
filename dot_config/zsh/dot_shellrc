@@ -69,8 +69,8 @@ if command -v fzf &> /dev/null; then
     }
 fi
 
-alias vi='emacs --with-profile rational'   # lolz!
-alias v='emacs --with-profile rational'    # less heresy
+# alias vi='emacs --with-profile rational'   # lolz!
+# alias v='emacs --with-profile rational'    # less heresy
 
 alias gupv='git pull --rebase --autostash -v'
 alias gw='git worktree'

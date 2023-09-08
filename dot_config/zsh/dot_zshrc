@@ -304,5 +304,6 @@ fi
 
 # source /Users/erewhon/.config/broot/launcher/bash/br
 
-# todo : make sure we check if ASDF is in place first!
-. $(brew --prefix asdf)/libexec/asdf.sh
+if command -v asdf &> /dev/null; then
+   source $(brew --prefix asdf)/libexec/asdf.sh
+fi
