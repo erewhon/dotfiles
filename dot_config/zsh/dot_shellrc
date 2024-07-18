@@ -14,6 +14,15 @@ alias e='emacsclient --no-wait --create-frame'
 alias gdh='git diff HEAD'
 alias mc='mc -x'
 alias play=ansible-playbook
+# todo : automate the below!
+alias histback='fc -W ~/.local/state/zsh/history.$( date +%Y%m%d.%H%M )'
+
+# zellij layouts
+alias astro='zellij action new-tab -l ~/.config/zellij/layouts/astrodev.kdl'
+alias client='zellij action new-tab -l ~/.config/zellij/layouts/clientdev.kdl'
+alias pod='zellij action new-tab -l ~/.config/zellij/layouts/videopod.kdl'
+alias sdn='zellij action new-tab -l ~/.config/zellij/layouts/stevenet.kdl'
+alias server='zellij action new-tab -l ~/.config/zellij/layouts/serverdev.kdl'
 
 TMUX_VERSION=$( tmux -V | awk '{print $2}' )
 
