@@ -4,8 +4,8 @@
     signingkey = B057CF83D94AC81F
 
 
-[commit]
-    gpgsign = true
+# [commit]
+#     gpgsign = true
 
 [rerere]
 	enabled = true
@@ -39,3 +39,5 @@
 
 [init]
 	defaultBranch = main
+[alias]
+	change-commits = "!f() { VAR=$1; OLD=$2; NEW=$3; shift 3; git filter-branch --env-filter \"if [[ \\\"$`echo $VAR`\\\" = '$OLD' ]]; then export $VAR='$NEW'; fi\" $@; }; f"

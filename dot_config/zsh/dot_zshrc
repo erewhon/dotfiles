@@ -224,6 +224,12 @@ fi
 #
 # Level-up vi if possible
 #
+#if command -v hx 1>/dev/null 2>&1; then
+#    alias vi=hx
+#
+#    export EDITOR="hx"                             # $EDITOR should open in terminal.  Use vi rather than dealing with Emacs session issues
+#fi
+
 if command -v nvim 1>/dev/null 2>&1; then
     alias vi=nvim
 
@@ -315,6 +321,7 @@ sources=(
     "$ZDOTDIR/.p10k.zsh"
     "$(brew --prefix asdf)/libexec/asdf.sh"
     "$HOME/.config/broot/launcher/bash/br"
+    "$HOME/.cargo/env"
 )
 
 for file in $sources
@@ -323,3 +330,14 @@ do
 done
 
 export PATH=$HOME/Projects/erewhon/content-tools:$PATH
+
+# [[ -s "$HOME/.zshrc-local" ]] && source "$HOME/.zshrc-local"
+
+# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
+# [[ ! -f $ZDOTDIR/.p10k.zsh ]] || source $ZDOTDIR/.p10k.zsh
+
+
+# todo : make sure we check if ASDF is in place first!
+# [[ -s $(brew --prefix asdf)/libexec/asdf.sh ]] && . $(brew --prefix asdf)/libexec/asdf.sh
+
+# [[ -s $HOME/.config/broot/launcher/bash/br ]] && source $HOME/.config/broot/launcher/bash/br

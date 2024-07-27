@@ -104,6 +104,11 @@ _G.packer_plugins = {
     path = "/Users/erewhon/.local/share/nvim/site/pack/packer/start/mason.nvim",
     url = "https://github.com/williamboman/mason.nvim"
   },
+  nfnl = {
+    loaded = true,
+    path = "/Users/erewhon/.local/share/nvim/site/pack/packer/start/nfnl",
+    url = "https://github.com/Olical/nfnl"
+  },
   ["nvim-cmp"] = {
     loaded = true,
     path = "/Users/erewhon/.local/share/nvim/site/pack/packer/start/nvim-cmp",
