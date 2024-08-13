@@ -55,13 +55,6 @@ if [[ -o login ]]; then
 fi
 
 
-# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
-# Initialization code that may require console input (password prompts, [y/n]
-# confirmations, etc.) must go above this block; everything else may go below.
-if [[ -r "${XDG_CACHE_HOME}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-  source "${XDG_CACHE_HOME}/p10k-instant-prompt-${(%):-%n}.zsh"
-fi
-
 #
 # Zsh config.   A lot of oh-my-zsh, a lot of other things...
 #
@@ -109,8 +102,7 @@ source $ZDOTDIR/.shellrc
 # to Google, Stackoverflow, and Github Gist's, it's easy!
 #
 
-# Powerline10k
-ZSH_THEME="powerlevel10k/powerlevel10k"
+### to add...
 
 ENABLE_CORRECTION="true"
 DISABLE_UNTRACKED_FILES_DIRTY="true"
