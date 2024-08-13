@@ -309,19 +309,25 @@ zshaddhistory() {
 # }
 
 #
+# Switched from McFly to Atuin
+#
+if command -v atuin &> /dev/null; then
+    eval "$(atuin init zsh)"
+fi
+
+#
 # experimental: McFly.  Need to troubleshoot why this sometimes doesn't seem to bind!
 #
-if command -v mcfly &> /dev/null; then
-    # export MCFLY_FUZZY=true
-    source $ZDOTDIR/mcfly.zsh
-fi
+#if command -v mcfly &> /dev/null; then
+#    # export MCFLY_FUZZY=true
+#    source $ZDOTDIR/mcfly.zsh
+#fi
 
 sources=(
     "$HOME/.zshrc-local"
     "$ZDOTDIR/.p10k.zsh"
     "$(brew --prefix asdf)/libexec/asdf.sh"
     "$HOME/.config/broot/launcher/bash/br"
-    "$HOME/.cargo/env"
 )
 
 for file in $sources
