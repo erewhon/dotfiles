@@ -55,6 +55,8 @@ if [[ -o login ]]; then
 fi
 
 
+export ZSH_THEME=robbyrussell
+
 #
 # Zsh config.   A lot of oh-my-zsh, a lot of other things...
 #
@@ -129,7 +131,6 @@ plugins=(aws
          kubectl
          mosh
          npm
-         ripgrep
          tmux
          zsh-autosuggestions   # Fish-like auto suggestions
         )
