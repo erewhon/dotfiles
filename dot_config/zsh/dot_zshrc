@@ -55,7 +55,31 @@ if [[ -o login ]]; then
 fi
 
 
-export ZSH_THEME=robbyrussell
+# export ZSH_THEME=robbyrussell
+#
+# Layout
+#
+# line 1:
+#   left:  <apple> <dir icon> <path> on <git icon> <branch icon> <branch name> <git status>
+#   right: "with " <user> @ <host> at <clock icon> <time>
+# line 2:
+#   left: >
+#   right: <battery icon> <%batt>
+#
+
+
+if command -v oh-my-posh &> /dev/null; then
+    CFG=~/.config/zsh/omp-velvet.toml
+    # CFG=~/.config/zsh/oh-my-posh.toml
+    # CFG=~/.config/zsh/zen.toml
+    # CFG=$(brew --prefix oh-my-posh)/themes/powerlevel10k_modern.omp.json
+    # CFG=$(brew --prefix oh-my-posh)/themes/amro.omp.json
+    # CFG=$(brew --prefix oh-my-posh)/themes/negligible.omp.json
+    # CFG=$(brew --prefix oh-my-posh)/themes/night-owl.omp.json
+    # CFG=$(brew --prefix oh-my-posh)/themes/powerlevel10k_rainbow.omp.json
+    # CFG=$(brew --prefix oh-my-posh)/themes/velvet.omp.json
+    eval "$(oh-my-posh init zsh --config $CFG)"
+fi
 
 #
 # Zsh config.   A lot of oh-my-zsh, a lot of other things...

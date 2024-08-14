@@ -1,0 +1,202 @@
+version = 2
+final_space = true
+console_title_template = '{{ .Shell }} - {{ .Folder }}'
+
+[[blocks]]
+  type = 'prompt'
+  alignment = 'left'
+  newline = true
+
+  [[blocks.segments]]
+    type = 'os'
+    style = 'diamond'
+    template = ' {{ if .WSL }}WSL at {{ end }}{{.Icon}} '
+    background = '#0E050F'
+    foreground = '#EFDCF9'
+    Text = ''
+    Duration = 0
+    NameLength = 0
+
+    [blocks.segments.properties]
+      arch = ''
+      debian = ''
+      fedora = ''
+      linux = ''
+      macos = ''
+      manjaro = ''
+      opensuse = ''
+      ubuntu = ''
+      windows = ''
+
+  [[blocks.segments]]
+    type = 'path'
+    style = 'powerline'
+    powerline_symbol = ''
+    template = ' {{ .Path }} '
+    background = '#170B3B'
+    foreground = '#EFDCF9'
+    Text = ''
+    Duration = 0
+    NameLength = 0
+
+    [blocks.segments.properties]
+      folder_icon = '...'
+      folder_separator_icon = '/'
+      home_icon = '~'
+      max_depth = 3.0
+      style = 'agnoster_short'
+
+  [[blocks.segments]]
+    type = 'git'
+    style = 'powerline'
+    powerline_symbol = ''
+    template = ' {{ .UpstreamIcon }}{{ .HEAD }}{{if .BranchStatus }} {{ .BranchStatus }}{{ end }}{{ if .Working.Changed }}  {{ .Working.String }}{{ end }}{{ if and (.Working.Changed) (.Staging.Changed) }} |{{ end }}{{ if .Staging.Changed }}  {{ .Staging.String }}{{ end }}{{ if gt .StashCount 0 }}  {{ .StashCount }}{{ end }} '
+    background = '#341948'
+    foreground = '#EFDCF9'
+    Text = ''
+    Duration = 0
+    NameLength = 0
+
+    [blocks.segments.properties]
+      branch_max_length = 25.0
+      fetch_stash_count = true
+      fetch_status = true
+      fetch_upstream_icon = true
+
+  [[blocks.segments]]
+    type = 'executiontime'
+    style = 'powerline'
+    powerline_symbol = ''
+    template = ' {{ .FormattedMs }} '
+    background = '#4c1f5e'
+    foreground = '#EFDCF9'
+    Text = ''
+    Duration = 0
+    NameLength = 0
+
+    [blocks.segments.properties]
+      always_enabled = true
+
+  [[blocks.segments]]
+    type = 'status'
+    style = 'diamond'
+    foreground_templates = ['{{ if gt .Code 0 }}#FF3C3C{{ end }}']
+    trailing_diamond = ''
+    template = ' {{ if gt .Code 0 }} {{.Code}}{{ end }} '
+    background = '#69307A'
+    foreground = '#EFDCF9'
+    Text = ''
+    Duration = 0
+    NameLength = 0
+
+    [blocks.segments.properties]
+      always_enabled = true
+
+[[blocks]]
+  type = 'rprompt'
+  alignment = 'right'
+
+  [[blocks.segments]]
+    type = 'python'
+    style = 'diamond'
+    leading_diamond = ' '
+    trailing_diamond = ''
+    template = '{{ if .Error }}{{ .Error }}{{ else }}{{ if .Venv }}{{ .Venv }} {{ end }}{{ .Full }}{{ end }}'
+    background = '#4c1f5e'
+    foreground = '#E4F34A'
+    Text = ''
+    Duration = 0
+    NameLength = 0
+
+    [blocks.segments.properties]
+      fetch_version = false
+
+  [[blocks.segments]]
+    type = 'go'
+    style = 'diamond'
+    leading_diamond = ' '
+    trailing_diamond = ''
+    template = '{{ if .Error }}{{ .Error }}{{ else }}{{ .Full }}{{ end }}'
+    background = '#4c1f5e'
+    foreground = '#7FD5EA'
+    Text = ''
+    Duration = 0
+    NameLength = 0
+
+    [blocks.segments.properties]
+      fetch_version = false
+
+  [[blocks.segments]]
+    type = 'node'
+    style = 'diamond'
+    leading_diamond = ' '
+    trailing_diamond = ''
+    template = '{{ if .PackageManagerIcon }}{{ .PackageManagerIcon }} {{ end }}{{ .Full }}'
+    background = '#4c1f5e'
+    foreground = '#42E66C'
+    Text = ''
+    Duration = 0
+    NameLength = 0
+
+    [blocks.segments.properties]
+      fetch_version = false
+
+  [[blocks.segments]]
+    type = 'ruby'
+    style = 'diamond'
+    leading_diamond = ' '
+    trailing_diamond = ''
+    template = '{{ if .Error }}{{ .Error }}{{ else }}{{ .Full }}{{ end }}'
+    background = '#4c1f5e'
+    foreground = '#E64747'
+    Text = ''
+    Duration = 0
+    NameLength = 0
+
+    [blocks.segments.properties]
+      fetch_version = false
+
+  [[blocks.segments]]
+    type = 'java'
+    style = 'diamond'
+    leading_diamond = ' '
+    trailing_diamond = ''
+    template = '{{ if .Error }}{{ .Error }}{{ else }}{{ .Full }}{{ end }}'
+    background = '#4c1f5e'
+    foreground = '#E64747'
+    Text = ''
+    Duration = 0
+    NameLength = 0
+
+    [blocks.segments.properties]
+      fetch_version = false
+
+[[blocks]]
+  type = 'prompt'
+  alignment = 'left'
+  newline = true
+
+  [[blocks.segments]]
+    type = 'time'
+    style = 'diamond'
+    trailing_diamond = ''
+    template = ' {{ .CurrentDate | date .Format }} '
+    background = '#4c1f5e'
+    foreground = '#EFDCF9'
+    Text = ''
+    Duration = 0
+    NameLength = 0
+
+    [blocks.segments.properties]
+      time_format = '15:04:05'
+
+# [transient_prompt]
+#   type = 'time'
+#   style = 'diamond'
+#   trailing_diamond = ''
+#   template = ' {{ .CurrentDate | date .Format }} '
+#   background = '#4c1f5e'
+#   foreground = '#EFDCF9'
+#   Text = ''
+#   Duration = 0
+#   NameLength = 0
