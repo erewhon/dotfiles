@@ -1,4 +1,4 @@
-require('lsp-zero')
+--spb-- require('lsp-zero')
 require('lspconfig').intelephense.setup({})
 
 --lsp.ensure_installed({
