@@ -12,7 +12,7 @@ return {
 	  end
   },
   { 'nvim-treesitter/nvim-treesitter', build = ':TSUpdate' },
-  'nvim-treesitter/playground',
+  --'nvim-treesitter/playground',
   --use("nvim-lua/plenary.nvim") -- don't forget to add this one if you don't have it yet!
   --use({
   --    "ThePrimeagen/harpoon",
