@@ -78,6 +78,7 @@ if command -v oh-my-posh &> /dev/null; then
     # CFG=$(brew --prefix oh-my-posh)/themes/night-owl.omp.json
     # CFG=$(brew --prefix oh-my-posh)/themes/powerlevel10k_rainbow.omp.json
     # CFG=$(brew --prefix oh-my-posh)/themes/velvet.omp.json
+    # CFG=$(brew --prefix oh-my-posh)/themes/nordtron.omp.json
     eval "$(oh-my-posh init zsh --config $CFG)"
 fi
 
@@ -354,13 +355,28 @@ done
 
 export PATH=$HOME/Projects/erewhon/content-tools:$PATH
 
-# [[ -s "$HOME/.zshrc-local" ]] && source "$HOME/.zshrc-local"
+#
+# ssh customization
+#
+SSH_ENV_DIR="$HOME/.ssh/$HOSTNAME"
+SSH_ENV="$SSH_ENV_DIR/environment"
 
-# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
-# [[ ! -f $ZDOTDIR/.p10k.zsh ]] || source $ZDOTDIR/.p10k.zsh
+mkdir -p $SSH_ENV_DIR
+
+function start_agent {
+    echo "Initialising new SSH agent..."
+    (umask 066; /usr/bin/ssh-agent > "${SSH_ENV}")
+    . "${SSH_ENV}" > /dev/null
+    /usr/bin/ssh-add;
+}
 
 
-# todo : make sure we check if ASDF is in place first!
-# [[ -s $(brew --prefix asdf)/libexec/asdf.sh ]] && . $(brew --prefix asdf)/libexec/asdf.sh
-
-# [[ -s $HOME/.config/broot/launcher/bash/br ]] && source $HOME/.config/broot/launcher/bash/br
+# Source SSH settings, if applicable
+if [ -f "${SSH_ENV}" ]; then
+    . "${SSH_ENV}" > /dev/null
+    ps -ef | grep ${SSH_AGENT_PID} | grep ssh-agent$ > /dev/null || {
+        start_agent;
+    }
+else
+    start_agent;
+fi
