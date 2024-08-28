@@ -8,6 +8,12 @@ return {
 	-- macos_window_background_blur = 40,
 	macos_window_background_blur = 30,
 
+    default_cursor_style = "BlinkingBar",
+    cursor_blink_rate = 500,
+    -- cursor_blink_ease_in = "Linear",
+    -- cursor_blink_ease_out = "Linear",
+    -- cursor_thickness = 2,
+
     window_background_gradient = {
       -- Can be "Vertical" or "Horizontal".  Specifies the direction
       -- in which the color gradient varies.  The default is "Horizontal",
@@ -66,7 +72,7 @@ return {
 	-- 	saturation = 0.5,
 	-- },
 	window_background_opacity = 0.85,
-	window_decorations = 'RESIZE',
+	window_decorations = 'RESIZE | MACOS_FORCE_ENABLE_SHADOW',
 	keys = {
 		{
 			key = 'f',
