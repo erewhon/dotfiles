@@ -141,7 +141,7 @@
     (defun my/content-dir (site typ)
       (my/org-read-file
        (format-time-string
-        (concat  "~/Projects/erewhon/websites/" site "/src/content/" typ "/%Y/%m/_"))))
+        (concat  "~/Projects/erewhon/" site "/_content/" typ "/%Y/%m/_"))))
 
     (defun my/content-dir-2 (site typ)
       (my/org-read-file
@@ -182,31 +182,22 @@
             ;; my custom items
             ("c" "Content (articles, blogs)")
             ;;;;
-            ("ce" "Content for Erewhon (erewhon.tech)")
-            ("cea" "Article for Erewhon (erewhon.tech)" plain
-             (file (lambda ()
-                     (my/content-dir-2 "erewhon.tech" "articles")))
-             (file "~/Projects/erewhon/websites/content-template.mdx")
-             :prepend :unnarrowed
-             )
-            ("ceb" "Blog for Erewhon (erewhon.tech)" plain
-             (file (lambda ()
-                     (my/content-dir-2 "erewhon.tech" "blogs")))
-             (file "~/Projects/erewhon/websites/content-template.mdx")
-             :prepend :unnarrowed
-             )
+            ;;;; todo :
+            ;;;; - astrophotography.tv
+            ;;;; - steve.net
+            ;;;; - erewhon.tech?
             ;;;;
-            ("cr" "Content for Random Erewhon (erewhon.us)")
-            ("cra" "Articles for Random Erewhon (erewhon.us)" plain
+            ("ca" "Content for Astrophotography.TV")
+            ("cra" "Articles for Astrophotography.TV" plain
              (file (lambda ()
-                     (my/content-dir "erewhon.us" "articles")))
-             (file "~/Projects/erewhon/websites/content-template.org")
+                     (my/content-dir "astrophotography.tv" "articles")))
+             (file "~/Projects/erewhon/websites/content-template.mdx")
              :prepend :unnarrowed
              )
-            ("crb" "Blog for Random Erewhon (erewhon.us)" plain
+            ("crb" "Blog for Astrophotography.TV" plain
              (file (lambda ()
-                     (my/content-dir "erewhon.us" "blog")))
-             (file "~/Projects/erewhon/websites/content-template.org")
+                     (my/content-dir "astrophotography.tv" "blog")))
+             (file "~/Projects/erewhon/websites/content-template.mdx")
              :prepend :unnarrowed
              )
             ;;;
@@ -214,13 +205,13 @@
             ("csa" "Articles for SteveDotNet" plain
              (file (lambda ()
                      (my/content-dir "steve.net" "articles")))
-             (file "~/Projects/erewhon/websites/content-template.org")
+             (file "~/Projects/erewhon/websites/content-template.mdx")
              :prepend :unnarrowed
              )
             ("csb" "Articles for SteveDotNet" plain
              (file (lambda ()
                      (my/content-dir "steve.net" "blog")))
-             (file "~/Projects/erewhon/websites/content-template.org")
+             (file "~/Projects/erewhon/websites/content-template.mdx")
              :prepend :unnarrowed
              )
 ;;            ("ce" "Content for Erewhon (erewhon.tech)" plain
@@ -257,13 +248,6 @@
     ;;
     ;; References:
     ;; 2022-01-29: https://github.com/jethrokuan/dots/blob/master/.doom.d/config.el#L375
-
-;;;(setq org-roam-directory (file-truename "~/Org/roam" ))
-;;;(setq org-roam-dailies-directory (file-truename "~/Org/roam/journal" ))
-
-;;;(add-hook 'after-init-hook 'org-roam-mode)
-
-;;;(org-roam-db-autosync-mode)
 
     ;;
     ;; Key bindings
@@ -415,6 +399,8 @@
 ;; Cursor (to make consistent with terminal).  'box is default
 (setq-default cursor-type 'bar)
 
+
+
 ;; todo:
 ;; - turn on minimap by default
 ;;
@@ -445,17 +431,6 @@
 ;;   (we run this near the end so all major modes are properly loaded...)
 ;;
 ;; (desktop-save-mode 1)                                     ;; automatically load buffers from last session
-
-;;(setq history-length 50)
-
-;;(add-to-list 'desktop-globals-to-save 'file-name-history) ;; also save file history
-
-;; Things not to include in desktop
-;; (delete 'file-name-history desktop-globals-to-save
-
-;; (setq desktop-restore-frames nil)                         ;; Don't save frame and window configuration
-
-;;  (setq desktop-restore-eager 0))                            ;; eagerly restore no buffers; lazy-load all of them
 
 ;; todo:
 ;; - turn on minimap by default
@@ -493,19 +468,6 @@
 (setq company-idle-delay 1.0)
 
 ;;
-;; Custom focus mode for writing.  Olivetti mode.
-;; todo:
-;; - buffer-local variable for the writing mode
-;; - (doom/toggle-line-numbers) - nil, t
-;;
-(defun sb/toggle-writing-mode ()
-  "Stuff."
-  (interactive)
-  ;;(doom/toggle-line-numbers) ;; toggle between nil and t, otherwise manually C-c t l
-  (olivetti-mode 'toggle)
-  )
-
-;;
 ;; Development-related configuration and keybinding tweaks
 ;;
 (defun custom-reindent-eol()
@@ -517,17 +479,24 @@
 
 (add-hook 'rjsx-mode-hook 'custom-reindent-eol)
 
-;;(setq auto-indent-key-for-end-of-line-then-newline "<M-return>")
-;;(setq auto-indent-key-for-end-of-line-insert-char-then-newline "<M-S-return>")
+(use-package! gptel
+ :config
+ (global-set-key (kbd "C-c RET") 'gptel-send)
+ (setq! gptel-model "gpt-4o-mini")
+ (setq! gptel-api-key "sk-blah")
+ (add-hook 'gptel-post-stream-hook 'gptel-auto-scroll)
+ (add-hook 'gptel-post-response-hook 'gptel-end-of-response)
+ (gptel-make-ollama "Ollama"
+                 :host "localhost:11434"
+                 :stream t
+                 :models '("llama3:latest"))
 
-;;(use-package auto-indent-mode
-;;  ;; :bind (("s-i" . blamer-show-commit-info))
-;;  ;;:defer 20
-;;  ;;:custom
-;;  ;;(blamer-idle-time 0.3)
-;;  ;;(blamer-min-offset 70)
-;;  :config
-;;  (auto-indent-global-mode))
+ ;;(gptel-make-anthropic "Claude"          ;Any name you want
+ ;; :stream t                             ;Streaming responses
+ ;; :key "your-api-key")
+ )
+;; gpt-4-1106-preview - new gpt 4 turbo
+
 
 ;; Variable font pitch for org mode
 (defun sb/set-buffer-variable-pitch ()
@@ -562,21 +531,7 @@
   (add-to-list 'dirvish-preview-dispatchers 'eza)
   )
 
-;; with flair
-
-;; (add-hook 'minibuffer-setup-hook #'vertico-repeat-save)
-
-;; keys: map!, define-key!, ec
-;; o
-
 (use-package! tabspaces
-  ;; use this next line only if you also use straight, otherwise ignore it.
-  ;;:straight (:type git :host github :repo "mclear-tools/tabspaces")
-  ;;:hook (after-init . tabspaces-mode) ;; use this only if you want the minor-mode loaded at startup.
-  ;;:commands (tabspaces-switch-or-create-workspace
-  ;;           tabspaces-open-or-create-project-and-workspace)
-  ;;:config
-  ;;(tabspaces-mode 1)
   :custom
   (tabspaces-use-filtered-buffers-as-default t)
   (tabspaces-default-tab "Default")
@@ -589,7 +544,9 @@
   ;;(tabspaces-session-auto-restore t)
   )
 
+;;
 ;; lifted from https://github.com/aaronjensen/emacs-modern-tab-bar/
+;;
 (defcustom modern-tab-bar-tab-name-format-function #'tab-bar-tab-name-format-default
   "Function to format a tab name.
 Function gets two arguments, the tab and its number, and should return
@@ -620,33 +577,4 @@ the formatted tab name to display in the tab bar."
         (setq tabspaces-session-auto-restore t)
         (tabspaces-mode 1)
 
-        ;;(require 'powerline)
-
-        ;;(set-face-attribute 'tabbar-default nil
-        ;;                    :background "#2e3440"
-        ;;                    :foreground "white"
-        ;;                    :distant-foreground "#2e3440"
-        ;;                    ;;:family "Helvetica Neue"
-        ;;                    :box nil)
-        ;;(defvar my/tabbar-height 20)
-        ;;(defvar my/tabbar-left (powerline-wave-right 'tab-bar nil my/tabbar-height))
-        ;;(defvar my/tabbar-right (powerline-wave-left nil 'tab-bar my/tabbar-height))
-        ;;(defun my/tabbar-tab-label-function (tab)
-        ;;  (powerline-render (list my/tabbar-left
-        ;;                          (format " %s  " (car tab))
-        ;;                          my/tabbar-right)))
-
-        (setq tab-bar-tab-name-format-function #'modern-tab-bar--tab-bar-name-format)
-        ;;(setq tab-bar-format #'my/tabbar-tab-label-function)
-        ;;(setq tabbar-tab-label-function #'my/tabbar-tab-label-function)
-        ;;(setq tab-bar-tab-name-format-function #'my/tabbar-tab-label-function)
-        ))
-
-;;(after! tabspaces
-;;  (progn
-;;    (tabspaces-mode 1)
-;;;;
-;;    (setq tabspaces-use-filtered-buffers-as-default t)
-;;    (setq tabspaces-default-tab "Default")
-;;    (setq tabspaces-remove-to-default t)
-;;    (setq tabspaces-include-buffers '("*scratch*"))))
+        (setq tab-bar-tab-name-format-function #'modern-tab-bar--tab-bar-name-format)))

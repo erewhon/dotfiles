@@ -1,0 +1,25 @@
+layout {
+    tab name="server dev" {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        pane split_direction="vertical" {
+            pane command="go" {
+                name "serve"
+                args "run" "." "serve"
+                cwd "/Users/erewhon/Projects/waffle/server"
+            }
+            pane split_direction="horizontal" {
+                pane {
+                    cwd "/Users/erewhon/Projects/waffle/server"
+                }
+                pane command="gh" {
+                    name "Github Watch"
+                    args "run" "watch"
+                    start_suspended true
+                    cwd "/Users/erewhon/Projects/waffle/server"
+                }
+            }
+        }
+    }
+}

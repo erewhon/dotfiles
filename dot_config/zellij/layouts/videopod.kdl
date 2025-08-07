@@ -1,0 +1,33 @@
+//
+// Connect to various things I might want access to when
+//    using video pod
+//
+// For turing, connect and start / attach to tmux
+//
+layout {
+    tab name="videopod" {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        pane split_direction="vertical" {
+            pane command="ssh" {
+                name "Turing (OBS)"
+                args "-t" "100.121.137.135" "tmux" "new-session" "-A" "-s" "flatland"
+            }
+            pane split_direction="horizontal" {
+                pane command="ssh" {
+                    name "Sagan (Seestar bridge)"
+                    args "sagan.local"
+                    //args "sagan.peacock-bramble.ts.net"
+                }
+                pane command="ssh" {
+                    name "PlayoutBee"
+                    args "playoutbee.local"
+                }
+                pane {
+                    cwd "/Users/erewhon"
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,47 @@
+layout {
+    tab name="client dev" {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        pane split_direction="vertical" {
+            pane stacked=true {
+                nx name="admin-ui" {
+                    args "serve" "admin-ui" "--port" "4000" "--hostname" "127.0.0.1"
+                }
+                nx name="app" {
+                    args "serve" "next" "--port" "3000"
+                    expanded true
+                }
+                nx name="partner api" {
+                    args "serve" "partner-api"
+                }
+                nx name="partner api docs" {
+                    args "serve" "partner-api-docs" "--port" "4242"
+                }
+            }
+            pane split_direction="horizontal" {
+                pane {
+                    cwd "/Users/erewhon/Projects/waffle/client"
+                }
+                pane command="gh" {
+                    name "Github Watch"
+                    args "run" "watch"
+                    start_suspended true
+                    cwd "/Users/erewhon/Projects/waffle/client"
+                }
+                pane command="/opt/homebrew/opt/redis/bin/redis-server" name="redis" size="20%" {
+                  args "/opt/homebrew/etc/redis.conf"
+                }
+            }
+        }
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+    pane_template name="nx" {
+        command "nx"
+        start_suspended true
+        // close_on_exit true
+        cwd "/Users/erewhon/Projects/waffle/client"
+    }
+}

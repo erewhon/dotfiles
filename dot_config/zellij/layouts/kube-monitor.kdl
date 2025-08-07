@@ -1,0 +1,51 @@
+layout {
+    tab name="monitor" {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        pane split_direction="vertical" {
+            pane command="k9s" {
+                args "-A" "-c" "pod"
+                name "k9s"
+                close_on_exit true
+                borderless true
+            }
+            pane stacked=true {
+                stern {
+                    name "cons dev logs"
+                    args "--timestamps" "--since" "10m" "--exclude" "ELB-HealthChecker" "-n" "consumer-development" "."
+                    expanded true
+                }
+                stern {
+                    name "cons beta logs"
+                    args "--timestamps" "--since" "10m" "--exclude" "ELB-HealthChecker" "-n" "consumer-beta" "."
+                    expanded true
+                }
+                stern {
+                    name "cons prod logs"
+                    args "--timestamps" "--since" "10m" "--exclude" "ELB-HealthChecker" "-n" "consumer-production" "."
+                }
+                stern {
+                    name "partner prod logs"
+                    args "--timestamps" "--since" "10m" "--exclude" "ELB-HealthChecker" "-n" "partner-production" "."
+                }
+                stern {
+                    name "embedded prod logs"
+                    args "--timestamps" "--since" "10m" "--exclude" "ELB-HealthChecker" "-n" "embedded-production" "."
+                }
+            }
+        }
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+        //pane size=1 borderless=true {
+        //    plugin location="zellij:compact-bar"
+        //}
+    }
+
+    pane_template name="stern" {
+        command "stern"
+        start_suspended true
+        close_on_exit true
+    }
+}

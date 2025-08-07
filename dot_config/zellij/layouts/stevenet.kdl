@@ -1,0 +1,19 @@
+layout {
+    tab name="steve net" {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        pane split_direction="vertical" {
+            pane command="npm" {
+                cwd "/Users/erewhon/Projects/erewhon/steve.net"
+                args "run" "dev" "--" "--port" "8888"
+            }
+            pane {
+                cwd "/Users/erewhon/Projects/erewhon/steve.net"
+            }
+        }
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+}

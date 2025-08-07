@@ -1,0 +1,19 @@
+layout {
+    tab name="astro dev" {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        pane split_direction="vertical" {
+            pane command="npm" {
+                cwd "/Users/erewhon/Projects/erewhon/astrophotography.tv"
+                args "run" "dev" "--" "--port" "7777"
+            }
+            pane {
+                cwd "/Users/erewhon/Projects/erewhon/astrophotography.tv"
+            }
+        }
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+}
