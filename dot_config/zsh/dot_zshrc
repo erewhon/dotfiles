@@ -54,20 +54,6 @@ if [[ -o login ]]; then
     fi
 fi
 
-
-# export ZSH_THEME=robbyrussell
-#
-# Layout
-#
-# line 1:
-#   left:  <apple> <dir icon> <path> on <git icon> <branch icon> <branch name> <git status>
-#   right: "with " <user> @ <host> at <clock icon> <time>
-# line 2:
-#   left: >
-#   right: <battery icon> <%batt>
-#
-
-
 if command -v starship &> /dev/null; then
     eval "$(starship init zsh)"
 fi
@@ -246,7 +232,7 @@ if command -v stern 1>/dev/null 2>&1; then
     source <(stern --completion=zsh)
 fi
 
-if command -v goose &> /dev/null; then
+if command -v goose 1>/dev/null 2>&1; then
     # Below lifted from https://block.github.io/goose/blog/2025/05/12/local-goose-qwen3/
     # zsh helper to use goose if you make a typo or just want to yolo into the shell
     #command_not_found_handler() {
