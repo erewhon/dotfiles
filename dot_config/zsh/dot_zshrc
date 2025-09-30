@@ -44,7 +44,7 @@ if [[ -o login ]]; then
 
         if command -v neofetch 2>&1 > /dev/null; then
             if [[ -z "$TMUX" ]]; then
-                fastfetch # --kitty $HOME/Documents/Pictures/Backgrounds/Unsplash/
+                fastfetch -l $HOME/Documents/Pictures/Backgrounds/Unsplash/
             else
                 fastfetch
             fi
