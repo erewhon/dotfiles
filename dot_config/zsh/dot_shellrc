@@ -17,6 +17,8 @@ alias play=ansible-playbook
 # todo : automate the below!
 alias histback='fc -W ~/.local/state/zsh/history.$( date +%Y%m%d.%H%M )'
 
+alias gitzip="git archive --format=zip HEAD ':!*.gitignore' -o ${PWD##*/}.zip"
+
 # zellij layouts
 alias astro='zellij action new-tab -l ~/.config/zellij/layouts/astrodev.kdl'
 alias client='zellij action new-tab -l ~/.config/zellij/layouts/clientdev.kdl'
@@ -75,6 +77,18 @@ if command -v fzf &> /dev/null; then
     function gdp() {
         preview="git diff $@ --color=always -- {-1}"
         git diff $@ --name-only | fzf -m --ansi --preview $preview
+    }
+
+    #alias bui='brew upgrade $( brew outdated | awk "{ print \$1 }" | fzf -m )'
+    # Adapted from https://github.com/thirteen37/fzf-brew/blob/master/fzf-brew.plugin.zsh
+    function bui() {
+        local inst=$(brew outdated | fzf --query="$1" -m \
+                                         --preview 'HOMEBREW_COLOR=true brew info {}' \
+                                         --bind "ctrl-space:execute-silent(brew home {})")
+
+        if [[ $inst ]]; then
+            for prog in $(echo $inst); do; brew upgrade $prog; done;
+        fi
     }
 fi
 

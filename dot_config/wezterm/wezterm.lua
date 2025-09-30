@@ -1,7 +1,11 @@
 local wezterm = require 'wezterm'
 return {
 	-- color_scheme = 'termnial.sexy',
+    --color_scheme = 'Dark Violet (base16)',
+    --color_scheme = 'BlueBerryPie', -- Almost too dark...
+    --color_scheme = 'C64',
 	color_scheme = 'Catppuccin Mocha',
+    --color_scheme = 'purplepeter',
 	enable_tab_bar = false,
 	font_size = 16.0,
 	font = wezterm.font('JetBrainsMono Nerd Font'),
@@ -35,6 +39,7 @@ return {
       -- predefined, preset gradients.
       -- A list of presets is shown in a section below.
       -- preset = "Warm",
+      --preset = 'Viridis',
 
       -- Specifies the interpolation style to be used.
       -- "Linear", "Basis" and "CatmullRom" as supported.

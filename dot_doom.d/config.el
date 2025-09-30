@@ -51,9 +51,24 @@
 
 (setq doom-theme 'nord)
 
-(setq doom-font (font-spec :family "JetBrainsMono Nerd Font" :size 18)
-      doom-variable-pitch-font (font-spec :family "ETBembo" :size 18)
-      doom-big-font (font-spec :family "JetBrainsMono Nerd Font" :size 28))
+;;(setq sb-default-font "Iosevka")
+(setq sb-default-variable-font "Iosevka Aile")
+
+(setq sb-default-font "JetbrainsMono Nerd Font")
+;;(setq sb-default-variable-font "ETBembo")
+
+
+;;(setq doom-font (font-spec :family "JetBrainsMono Nerd Font" :size 18)
+;;      doom-variable-pitch-font (font-spec :family "ETBembo" :size 18)
+;;      doom-big-font (font-spec :family "JetBrainsMono Nerd Font" :size 28))
+
+(set-face-attribute 'default nil :family sb-default-font)
+(set-face-attribute 'variable-pitch nil :family sb-default-variable-font)
+;;(set-face-attribute 'org-modern-symbol nil :family "Iosevka")
+
+(setq doom-font (font-spec :family sb-default-font :size 18)
+      doom-variable-pitch-font (font-spec :family sb-default-variable-font :size 18)
+      doom-big-font (font-spec :family sb-default-font :size 28))
 
 ;; Add some bling to Doom Dashboard!
 (setq fancy-splash-image "~/Documents/Pictures/Emacs/doom-emacs-color.png")
@@ -109,7 +124,7 @@
     ;; (sequence "[ ](T)" "[-](S)" "[?](W)" "|" "[X](D)")
     ;; (sequence "|" "OKAY(o)" "YES(y)" "NO(n)"))
 
-    (setq org-todo-keywords (quote ((sequence "TODO(t)" "NEXT(n)" "DOING(D)" "|" "DONE(d@/!)")
+    (setq org-todo-keywords (quote ((sequence "TODO(t)" "NEXT(n)" "DOING(D)" "IN-PROGRESS(I)" "|" "DONE(d@/!)")
                                     (sequence "WAITING(w@/!)" "SOMEDAY(s!)" "|" "CANCELLED(c@/!)" "PHONE"))))
 
 
@@ -131,9 +146,8 @@
       (read-file-name "File name"
                       dir ;; add <year> <month>
                       nil
-                      nil
+                      nil))
                       ;;"erewhon.tech/src/content/"
-                      ))
 
     (defun my/current-content-dir (subdir)
       (format-time-string (concat "~/Projects/erewhon/websites" subdir "/%Y/%m")))
@@ -141,7 +155,7 @@
     (defun my/content-dir (site typ)
       (my/org-read-file
        (format-time-string
-        (concat  "~/Projects/erewhon/" site "/_content/" typ "/%Y/%m/_"))))
+        (concat  "~/Projects/erewhon/websites/" site "/src/content/" typ "/%Y/%m/_"))))
 
     (defun my/content-dir-2 (site typ)
       (my/org-read-file
@@ -149,9 +163,8 @@
         (concat  "~/Projects/erewhon/" site "/content/" typ "/%Y/%m/"))))
 
     (setq my/org-content-template
-        "#+title: %^{Title|New Title}\n#+date: %^{Date|Today}\n#+description: \n#+draft: true\n\n%?"
+        "#+title: %^{Title|New Title}\n#+date: %^{Date|Today}\n#+description: \n#+draft: true\n\n%?")
         ;; "#+title: %^{Title|New Title}\n#+date: %^{Date}t\n#+description: \n#+draft: true\n\n%?"
-        )
 
     (setq org-capture-templates
           '(("t" "Personal todo" entry
@@ -182,21 +195,16 @@
             ;; my custom items
             ("c" "Content (articles, blogs)")
             ;;;;
-            ;;;; todo :
-            ;;;; - astrophotography.tv
-            ;;;; - steve.net
-            ;;;; - erewhon.tech?
-            ;;;;
-            ("ca" "Content for Astrophotography.TV")
-            ("cra" "Articles for Astrophotography.TV" plain
+            ("ce" "Content for Erewhon (erewhon.tech)")
+            ("cea" "Article for Erewhon (erewhon.tech)" plain
              (file (lambda ()
-                     (my/content-dir "astrophotography.tv" "articles")))
+                     (my/content-dir-2 "erewhon.tech" "articles")))
              (file "~/Projects/erewhon/websites/content-template.mdx")
-             :prepend :unnarrowed
-             )
-            ("crb" "Blog for Astrophotography.TV" plain
+             :prepend :unnarrowed)
+
+            ("ceb" "Blog for Erewhon (erewhon.tech)" plain
              (file (lambda ()
-                     (my/content-dir "astrophotography.tv" "blog")))
+                     (my/content-dir-2 "erewhon.tech" "blogs")))
              (file "~/Projects/erewhon/websites/content-template.mdx")
              :prepend :unnarrowed
              )
@@ -248,6 +256,15 @@
     ;;
     ;; References:
     ;; 2022-01-29: https://github.com/jethrokuan/dots/blob/master/.doom.d/config.el#L375
+
+
+
+;;;(setq org-roam-directory (file-truename "~/Org/roam" ))
+;;;(setq org-roam-dailies-directory (file-truename "~/Org/roam/journal" ))
+
+;;;(add-hook 'after-init-hook 'org-roam-mode)
+
+;;;(org-roam-db-autosync-mode)
 
     ;;
     ;; Key bindings
@@ -313,20 +330,16 @@
      org-pretty-entities t
      ;;org-hide-emphasis-markers t
      ;; show actually italicized text instead of /italicized text/
-     org-agenda-block-separator ""
+     org-agenda-block-separator "")
      ;;org-fontify-whole-heading-line t
      ;;org-fontify-done-headline t
      ;;org-fontify-quote-and-verse-blocks t
-     )
 
     (setq org-image-actual-width nil)
 
     ;; This determines the style of line numbers in effect. If set to `nil', line
     ;; numbers are disabled. For relative line numbers, set this to `relative'.
-    (setq display-line-numbers-type t)
-
-
-    ))
+    (setq display-line-numbers-type t)))
 
 (add-hook! org-mode :append
            #'visual-line-mode
@@ -340,8 +353,7 @@
                          "~/Results/04_Weekly.org"
                          "~/Results/03_Monthy.org"
                          "~/Results/02_Quarterly.org"
-                         "~/Results/01_Yearly.org"
-                         ))
+                         "~/Results/01_Yearly.org"))
 ;; (setq org-agenda-log-mode-items (quote (clock)))
 
 
@@ -412,25 +424,36 @@
 ;;;
 ;;; Overlay git blame
 ;;;
-(use-package blamer
-  :bind (("s-i" . blamer-show-commit-info))
-  :defer 20
-  :custom
-  (blamer-idle-time 0.3)
-  (blamer-min-offset 70)
-  :custom-face
-  (blamer-face ((t :foreground "#7a88cf"
-                   :background nil
-                   :height 140
-                   :italic t)))
-   :config
-   (global-blamer-mode 1))
+;;(use-package blamer
+;;  :bind (("s-i" . blamer-show-commit-info))
+;;  :defer 20
+;;  :custom
+;;  (blamer-idle-time 0.3)
+;;  (blamer-min-offset 70)
+;;  :custom-face
+;;  (blamer-face ((t :foreground "#7a88cf"
+;;                   :background nil
+;;                   :height 140
+;;                   :italic t)))
+;;   :config
+;;   (global-blamer-mode 1))
 
 ;;
 ;; Remember desktop buffers, and save periodically
 ;;   (we run this near the end so all major modes are properly loaded...)
 ;;
 ;; (desktop-save-mode 1)                                     ;; automatically load buffers from last session
+
+;;(setq history-length 50)
+
+;;(add-to-list 'desktop-globals-to-save 'file-name-history) ;; also save file history
+
+;; Things not to include in desktop
+;; (delete 'file-name-history desktop-globals-to-save
+
+;; (setq desktop-restore-frames nil)                         ;; Don't save frame and window configuration
+
+;;  (setq desktop-restore-eager 0))                            ;; eagerly restore no buffers; lazy-load all of them
 
 ;; todo:
 ;; - turn on minimap by default
@@ -467,6 +490,19 @@
 
 (setq company-idle-delay 1.0)
 
+
+;;
+;; Custom focus mode for writing.  Olivetti mode.
+;; todo:
+;; - buffer-local variable for the writing mode
+;; - (doom/toggle-line-numbers) - nil, t
+;;
+(defun sb/toggle-writing-mode ()
+  "Stuff."
+  (interactive)
+  ;;(doom/toggle-line-numbers) ;; toggle between nil and t, otherwise manually C-c t l
+  (olivetti-mode 'toggle))
+
 ;;
 ;; Development-related configuration and keybinding tweaks
 ;;
@@ -489,14 +525,24 @@
  (gptel-make-ollama "Ollama"
                  :host "localhost:11434"
                  :stream t
-                 :models '("llama3:latest"))
+                 :models '("llama3:latest")))
 
  ;;(gptel-make-anthropic "Claude"          ;Any name you want
  ;; :stream t                             ;Streaming responses
  ;; :key "your-api-key")
- )
 ;; gpt-4-1106-preview - new gpt 4 turbo
 
+;;(setq auto-indent-key-for-end-of-line-then-newline "<M-return>")
+;;(setq auto-indent-key-for-end-of-line-insert-char-then-newline "<M-S-return>")
+
+;;(use-package auto-indent-mode
+;;  ;; :bind (("s-i" . blamer-show-commit-info))
+;;  ;;:defer 20
+;;  ;;:custom
+;;  ;;(blamer-idle-time 0.3)
+;;  ;;(blamer-min-offset 70)
+;;  :config
+;;  (auto-indent-global-mode))
 
 ;; Variable font pitch for org mode
 (defun sb/set-buffer-variable-pitch ()
@@ -528,25 +574,30 @@
       `(shell . ("eza" "-al" "--color=always" "--icons"
                  "--group-directories-first" ,file))))
 
-  (add-to-list 'dirvish-preview-dispatchers 'eza)
-  )
+  (add-to-list 'dirvish-preview-dispatchers 'eza))
 
-(use-package! tabspaces
-  :custom
-  (tabspaces-use-filtered-buffers-as-default t)
-  (tabspaces-default-tab "Default")
-  (tabspaces-remove-to-default t)
-  (tabspaces-include-buffers '("*scratch*"))
-  ;;(tabspaces-initialize-project-with-todo t)
-  ;;(tabspaces-todo-file-name "project-todo.org")
-  ;; sessions
-  ;;(tabspaces-session t)
-  ;;(tabspaces-session-auto-restore t)
-  )
 
-;;
+;; with flair
+
+;; (add-hook 'minibuffer-setup-hook #'vertico-repeat-save)
+
+;; keys: map!, define-key!, ec
+;; o
+
+;; (use-package! tabspaces
+;;   :custom
+;;   (tabspaces-use-filtered-buffers-as-default t)
+;;   (tabspaces-default-tab "Default")
+;;   (tabspaces-remove-to-default t)
+;;   (tabspaces-include-buffers '("*scratch*"))
+;;   ;;(tabspaces-initialize-project-with-todo t)
+;;   ;;(tabspaces-todo-file-name "project-todo.org")
+;;   ;; sessions
+;;   ;;(tabspaces-session t)
+;;   ;;(tabspaces-session-auto-restore t)
+;;   )
+
 ;; lifted from https://github.com/aaronjensen/emacs-modern-tab-bar/
-;;
 (defcustom modern-tab-bar-tab-name-format-function #'tab-bar-tab-name-format-default
   "Function to format a tab name.
 Function gets two arguments, the tab and its number, and should return
@@ -577,4 +628,33 @@ the formatted tab name to display in the tab bar."
         (setq tabspaces-session-auto-restore t)
         (tabspaces-mode 1)
 
+        ;;(require 'powerline)
+
+        ;;(set-face-attribute 'tabbar-default nil
+        ;;                    :background "#2e3440"
+        ;;                    :foreground "white"
+        ;;                    :distant-foreground "#2e3440"
+        ;;                    ;;:family "Helvetica Neue"
+        ;;                    :box nil)
+        ;;(defvar my/tabbar-height 20)
+        ;;(defvar my/tabbar-left (powerline-wave-right 'tab-bar nil my/tabbar-height))
+        ;;(defvar my/tabbar-right (powerline-wave-left nil 'tab-bar my/tabbar-height))
+        ;;(defun my/tabbar-tab-label-function (tab)
+        ;;  (powerline-render (list my/tabbar-left
+        ;;                          (format " %s  " (car tab))
+        ;;                          my/tabbar-right)))
+
         (setq tab-bar-tab-name-format-function #'modern-tab-bar--tab-bar-name-format)))
+        ;;(setq tab-bar-format #'my/tabbar-tab-label-function)
+        ;;(setq tabbar-tab-label-function #'my/tabbar-tab-label-function)
+        ;;(setq tab-bar-tab-name-format-function #'my/tabbar-tab-label-function)
+
+
+;;(after! tabspaces
+;;  (progn
+;;    (tabspaces-mode 1)
+;;;;
+;;    (setq tabspaces-use-filtered-buffers-as-default t)
+;;    (setq tabspaces-default-tab "Default")
+;;    (setq tabspaces-remove-to-default t)
+;;    (setq tabspaces-include-buffers '("*scratch*"))))

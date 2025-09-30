@@ -1,6 +1,14 @@
 --spb-- require('lsp-zero')
 require('lspconfig').intelephense.setup({})
 
+require('lspconfig').ruff.setup({
+  init_options = {
+    settings = {
+      -- Ruff language server settings go here
+    }
+  }
+})
+
 --lsp.ensure_installed({
 --	'tsserver',
 --	'eslint',

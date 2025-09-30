@@ -1,6 +1,9 @@
 add_newline = false
 format = """$directory$character"""
+# Simplified prompt:
+# format = """$character"""
 palette = "catppuccin_mocha"
+# Comment out below for further simplification
 right_format = """$all"""
 command_timeout = 1000
 

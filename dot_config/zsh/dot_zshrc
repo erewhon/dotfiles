@@ -44,7 +44,7 @@ if [[ -o login ]]; then
 
         if command -v neofetch 2>&1 > /dev/null; then
             if [[ -z "$TMUX" ]]; then
-                neofetch --iterm2 $HOME/Documents/Pictures/Backgrounds/Unsplash/
+                neofetch --kitty $HOME/Documents/Pictures/Backgrounds/Unsplash/
             else
                 neofetch
             fi
@@ -177,13 +177,6 @@ setopt EXTENDED_HISTORY
 
 compdef _hosts asc
 compdef _hosts bsc
-
-#
-# Syntax highlighting of command-line ala "fish"
-#
-[[ -s "/usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]] && \
-    source /usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-
 
 #
 # Level-up our pager, if possible
@@ -336,10 +329,17 @@ fi
 #fi
 
 sources=(
+    "/usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
     "$HOME/.zshrc-local"
     "$ZDOTDIR/.p10k.zsh"
     "$(brew --prefix asdf)/libexec/asdf.sh"
     "$HOME/.config/broot/launcher/bash/br"
+    "$HOME/creds.env"
+)
+
+paths=(
+    "$HOME/Projects/erewhon/content-tools"
+    "$HOME/.claude/local"
 )
 
 for file in $sources
@@ -347,5 +347,10 @@ do
   [[ -s "$file" ]] && source "$file"
 done
 
-export PATH=$HOME/Projects/erewhon/content-tools:$PATH
+for dir in $paths
+do
+    [[ -s "$dir" ]] && export PATH="${dir}:${PATH}"
+done
 
+# bun completions
+[ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"

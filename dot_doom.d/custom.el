@@ -20,3 +20,5 @@
                 :box (:line-width (12 . 8) :color nil :style flat-button)))))
  '(tab-bar-tab ((t (:inherit tab-bar :box (:line-width (1 . 1) :style released-button)))))
  '(tab-bar-tab-inactive ((t (:inherit tab-bar-tab :background "#4c566a" :foreground "#3b4252")))))
+(put 'customize-group 'disabled nil)
+(put 'set-goal-column 'disabled nil)
