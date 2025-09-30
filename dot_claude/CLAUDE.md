@@ -7,3 +7,4 @@
 - Use ruff for linting and code formatting
 - Use pytest for testing
 - Use prettier for code formatting with Typescript
+- Do not restore, revert, or remove files without asking first
