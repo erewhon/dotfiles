@@ -232,20 +232,20 @@ if command -v stern 1>/dev/null 2>&1; then
     source <(stern --completion=zsh)
 fi
 
-if command -v goose 1>/dev/null 2>&1; then
-    # Below lifted from https://block.github.io/goose/blog/2025/05/12/local-goose-qwen3/
-    # zsh helper to use goose if you make a typo or just want to yolo into the shell
-    #command_not_found_handler() {
-    #  local cmd="$*"
-    #  echo "🪿:"
-    #  goose run -t "can you try to run this command please: $cmd"
-    #}
-    command_not_found_handler() {
-      local cmd="$*"
-      echo "🪿:"
-      GOOSE_PROVIDER=ollama GOOSE_MODEL=michaelneale/qwen3 goose run -t "can you try to run this command please: $cmd"
-    }
-fi
+#if command -v goose 1>/dev/null 2>&1; then
+#    # Below lifted from https://block.github.io/goose/blog/2025/05/12/local-goose-qwen3/
+#    # zsh helper to use goose if you make a typo or just want to yolo into the shell
+#    #command_not_found_handler() {
+#    #  local cmd="$*"
+#    #  echo "🪿:"
+#    #  goose run -t "can you try to run this command please: $cmd"
+#    #}
+#    command_not_found_handler() {
+#      local cmd="$*"
+#      echo "🪿:"
+#      GOOSE_PROVIDER=ollama GOOSE_MODEL=michaelneale/qwen3 goose run -t "can you try to run this command please: $cmd"
+#    }
+#fi
 
 #
 #
