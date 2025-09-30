@@ -1,3 +1,5 @@
+# We want to auto-commit changes. Maybe eventually push.
+
 [git]
     autoCommit = true
 #   autoPush = true
