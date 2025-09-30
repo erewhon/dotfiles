@@ -72,6 +72,21 @@ if command -v starship &> /dev/null; then
     eval "$(starship init zsh)"
 fi
 
+if command -v goose &> /dev/null; then
+    # Below lifted from https://block.github.io/goose/blog/2025/05/12/local-goose-qwen3/
+    # zsh helper to use goose if you make a typo or just want to yolo into the shell
+    #command_not_found_handler() {
+    #  local cmd="$*"
+    #  echo "🪿:"
+    #  goose run -t "can you try to run this command please: $cmd"
+    #}
+    command_not_found_handler() {
+      local cmd="$*"
+      echo "🪿:"
+      GOOSE_PROVIDER=ollama GOOSE_MODEL=michaelneale/qwen3 goose run -t "can you try to run this command please: $cmd"
+    }
+fi
+
 #
 # Zsh config.   A lot of oh-my-zsh, a lot of other things...
 #
