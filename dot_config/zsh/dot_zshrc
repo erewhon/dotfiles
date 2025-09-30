@@ -44,9 +44,10 @@ if [[ -o login ]]; then
 
         if command -v neofetch 2>&1 > /dev/null; then
             if [[ -z "$TMUX" ]]; then
-                ls -1 $HOME/Documents/Pictures/Backgrounds/Unsplash.fastfetch/ | \
+                IMAGE_ROOT=$HOME/Documents/Pictures/Backgrounds/Unsplash.fastfetch
+                ls -1 $IMAGE_ROOT/ | \
                        shuf -n 1 | \
-                       xargs -I {} fastfetch --raw "{}"
+                       xargs -I '{}' fastfetch --raw $IMAGE_ROOT/'{}'
                 #fastfetch -l $HOME/Documents/Pictures/Backgrounds/Unsplash/
             else
                 fastfetch
