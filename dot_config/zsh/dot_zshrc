@@ -42,13 +42,12 @@ if [[ -o login ]]; then
     then
         echo $NOW > $XDG_CACHE_HOME/.last_neofetch
 
-        if command -v neofetch 2>&1 > /dev/null; then
+        if command -v fastfetch 2>&1 > /dev/null; then
             if [[ -z "$TMUX" ]]; then
                 IMAGE_ROOT=$HOME/Documents/Pictures/Backgrounds/Unsplash.fastfetch
                 ls -1 $IMAGE_ROOT/ | \
                        shuf -n 1 | \
                        xargs -I '{}' fastfetch --raw $IMAGE_ROOT/'{}'
-                #fastfetch -l $HOME/Documents/Pictures/Backgrounds/Unsplash/
             else
                 fastfetch
             fi
