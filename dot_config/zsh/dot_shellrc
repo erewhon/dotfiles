@@ -19,12 +19,8 @@ alias histback='fc -W ~/.local/state/zsh/history.$( date +%Y%m%d.%H%M )'
 
 alias gitzip="git archive --format=zip HEAD ':!*.gitignore' -o ${PWD##*/}.zip"
 
-# zellij layouts
-alias astro='zellij action new-tab -l ~/.config/zellij/layouts/astrodev.kdl'
-alias client='zellij action new-tab -l ~/.config/zellij/layouts/clientdev.kdl'
-alias pod='zellij action new-tab -l ~/.config/zellij/layouts/videopod.kdl'
-alias sdn='zellij action new-tab -l ~/.config/zellij/layouts/stevenet.kdl'
-alias server='zellij action new-tab -l ~/.config/zellij/layouts/serverdev.kdl'
+alias post=posting    # API TUI
+alias sql=harlequin   # SQL TUI
 
 TMUX_VERSION=$( tmux -V | awk '{print $2}' )
 
