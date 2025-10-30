@@ -14,11 +14,15 @@ path = "~/.config/tmux"
 startup_command = "chezmoi edit --apply ~/.config/tmux/tmux.conf"
 preview_command = "bat --color=always ~/.config/tmux/tmux.conf"
 
-[[session]]
-name = "scopinator"
-path = "~/Projects/erewhon/scopinator/"
+#[[session]]
+#name = "scopinator"
+#path = "~/Projects/erewhon/scopinator/"
 # startup_command = "pwd"
 # windows = [ "claude" ]
+
+import = [
+  "~/.sesh-local"
+]
 
 [[window]]
 name = "shell"
