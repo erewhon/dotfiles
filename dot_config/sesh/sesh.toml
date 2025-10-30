@@ -28,3 +28,7 @@ name = "shell"
 [[window]]
 name = "claude"
 startup_script = "claude"
+
+[[window]]
+name = "git"
+startup_script = "git pull && lazygit"
