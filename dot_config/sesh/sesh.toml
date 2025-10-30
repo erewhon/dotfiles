@@ -1,0 +1,10 @@
+[[session]]
+name = "Downloads 📥"
+path = "~/Downloads"
+startup_command = "ls"
+
+[[session]]
+name = "tmux config"
+path = "~/.config/tmux"
+startup_command = "chezmoi edit --apply ~/.config/tmux/tmux.conf"
+preview_command = "bat --color=always ~/.config/tmux/tmux.conf"
