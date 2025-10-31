@@ -1,0 +1,17 @@
+#!/bin/bash # -*- mode: shell-script -*-
+#
+# Clones repo as bare repo and sets up for work trees
+#
+D=$( pwd )
+ORG_REPO=$1
+REPO=$( basename $ORG_REPO )
+
+mkdir -p $REPO
+cd $REPO
+
+gh repo clone $ORG_REPO .bare -- --bare
+
+echo "gitdir: ./.bare" > .git
+git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+git fetch
+
