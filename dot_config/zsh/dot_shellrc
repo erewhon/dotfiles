@@ -22,6 +22,11 @@ alias gitzip="git archive --format=zip HEAD ':!*.gitignore' -o ${PWD##*/}.zip"
 alias post=posting    # API TUI
 alias sql=harlequin   # SQL TUI
 
+# AI stuff 
+alias cl='claude --dangerously-skip-permissions'
+alias oc=opencode
+alias tm=task-master
+
 TMUX_VERSION=$( tmux -V | awk '{print $2}' )
 
 if [[ "$TMUX_VERSION" == "next-3.3" ]]; then
