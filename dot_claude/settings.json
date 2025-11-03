@@ -1,0 +1,60 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/stop.py --chat"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/notification.py --notify"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pre_compact.py --backup"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "input=$(cat); cwd=$(echo \"$input\" | jq -r '.workspace.current_dir // .cwd'); git_branch=\"\"; if git -C \"$cwd\" rev-parse --git-dir > /dev/null 2>&1; then branch=$(git -C \"$cwd\" branch 2>/dev/null | sed -n 's/* \\(.*\\)/\\1/p'); [ -n \"$branch\" ] && git_branch=\" $branch\"; fi; printf \"\\033[01;32m\\033[1m%s@%s \\033[36m%s\\033[32m%s\\033[0m\" \"$(whoami)\" \"$(hostname -s)\" \"$cwd\" \"$git_branch\""
+  },
+  "alwaysThinkingEnabled": false,
+  "mcpServers": {
+    "taskmaster-ai": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "--package=task-master-ai",
+        "task-master-ai"
+      ],
+      "env": {
+        "ANTHROPIC_API_KEY": "YOUR_ANTHROPIC_API_KEY_HERE",
+        "MODEL": "claude-3-7-sonnet-20250219",
+        "MAX_TOKENS": 64000,
+        "TEMPERATURE": 0.2,
+        "DEFAULT_SUBTASKS": 5,
+        "DEFAULT_PRIORITY": "medium"
+      }
+    }
+  }
+}
