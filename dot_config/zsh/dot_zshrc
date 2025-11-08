@@ -124,6 +124,7 @@ setopt AUTO_CD                       # You can just type a directory and CD ther
 plugins=(aws
          brew        # aliases of note: brews, bubo, bubu
          chucknorris # chuck, chuck_cow
+         direnv
          docker
          git         # aliases of note: g, ga, gcmsg, gdca
                      #   grup, ggpull, glg, glgp, glo, glol,
