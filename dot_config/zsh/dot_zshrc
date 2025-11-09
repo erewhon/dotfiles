@@ -354,6 +354,7 @@ sources=(
 paths=(
     "$HOME/Projects/erewhon/content-tools"
     "$HOME/.claude/local"
+    "$HOME/Projects/erewhon/dx" # Temporary
 )
 
 for file in $sources
