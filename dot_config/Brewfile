@@ -1,0 +1,13 @@
+#
+# A file to install Homebrew things that I use
+#
+aicommit2
+# container # Mac-only
+direnv
+luarocks
+opencode   # Multi-model open source coding agent
+gum        # Terminal pimping
+lazyjj
+sesh
+tmuxinator
+
