@@ -1,0 +1,54 @@
+{
+  "$schema": "./voices-schema.json",
+  "description": "Voice configurations for DevVoice development notifications",
+  "default_voice_id": "s3TPKV1kjDlVtZbl4Ksh",
+  "voices": {
+    "default": {
+      "voice_id": "s3TPKV1kjDlVtZbl4Ksh",
+      "description": "Default voice for general notifications",
+      "use_for": ["notify", "task-complete"]
+    },
+    "reviewer": {
+      "voice_id": "EXAVITQu4vr4xnSDxMaL",
+      "description": "Professional voice for code and requirement reviews",
+      "use_for": ["code-review", "requirement-review"]
+    },
+    "builder": {
+      "voice_id": "onwK4e9ZLuTAKqWW03F9",
+      "description": "Technical voice for build and test results",
+      "use_for": ["build-status", "test-results"]
+    },
+    "urgent": {
+      "voice_id": "pNInz6obpgDQGcFmaJgB",
+      "description": "Attention-grabbing voice for critical notifications",
+      "use_for": ["errors", "critical-failures"]
+    }
+  },
+  "notification_types": {
+    "requirement-review": {
+      "title_prefix": "Requirement Review",
+      "icon": "clipboard",
+      "priority": "normal"
+    },
+    "code-review": {
+      "title_prefix": "Code Review",
+      "icon": "magnifying-glass",
+      "priority": "normal"
+    },
+    "build-status": {
+      "title_prefix": "Build",
+      "icon": "hammer",
+      "priority": "high"
+    },
+    "test-results": {
+      "title_prefix": "Tests",
+      "icon": "beaker",
+      "priority": "high"
+    },
+    "task-complete": {
+      "title_prefix": "Task",
+      "icon": "check",
+      "priority": "normal"
+    }
+  }
+}
