@@ -1,0 +1,41 @@
+# Homebrew Brewfile — managed by chezmoi
+# `brew bundle --file=~/.config/Brewfile`
+
+# Taps
+tap "homebrew/bundle"
+
+# CLI tools
+brew "atuin"
+brew "bat"
+brew "direnv"
+brew "eza"
+brew "fastfetch"
+brew "fd"
+brew "fzf"
+brew "gum"
+brew "jq"
+brew "lazyjj"
+brew "luarocks"
+brew "mosh"
+brew "neovim"
+brew "opencode"
+brew "ripgrep"
+brew "sesh"
+brew "starship"
+brew "tmux"
+brew "tmuxinator"
+brew "zoxide"
+
+# Development
+brew "go"
+brew "node"
+brew "uv"
+
+# AI tools
+brew "aicommit2"
+
+{{ if eq .chezmoi.os "darwin" -}}
+# macOS casks
+cask "ghostty"
+cask "wezterm"
+{{ end -}}

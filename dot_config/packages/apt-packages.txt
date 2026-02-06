@@ -1,0 +1,31 @@
+# Debian/Ubuntu packages managed by chezmoi
+# One package per line. Comments with #.
+
+# Core CLI tools
+bat
+curl
+direnv
+eza
+fd-find
+fzf
+git
+jq
+mosh
+ripgrep
+tmux
+zoxide
+
+# Development
+build-essential
+golang
+nodejs
+npm
+
+# Shells & terminal
+zsh
+
+# Misc utilities
+cowsay
+fortune-mod
+neofetch
+rlwrap

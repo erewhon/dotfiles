@@ -1,0 +1,4 @@
+# Global npm packages installed via `npm install -g`
+# One package per line. Comments with #.
+
+typescript

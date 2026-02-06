@@ -1,0 +1,33 @@
+#!/bin/sh
+# {{ include "dot_config/packages/apt-packages.txt" | sha256sum }}
+# Install Debian/Ubuntu packages when apt-packages.txt changes.
+
+{{ $host := dict "is_remote" true "has_gui" false "has_brew" false "has_apt" false "is_personal" false -}}
+{{ if hasKey .hosts .chezmoi.hostname -}}
+{{   $host = index .hosts .chezmoi.hostname -}}
+{{ end -}}
+
+{{ if not (get $host "has_apt") -}}
+echo "[10-apt-packages] skipping: host has no apt"
+exit 0
+{{ else -}}
+
+set -e
+
+echo "[10-apt-packages] installing apt packages..."
+
+# Read package list, strip comments and blank lines
+packages=""
+while IFS= read -r line; do
+    line=$(echo "$line" | sed 's/#.*//' | xargs)
+    [ -z "$line" ] && continue
+    packages="$packages $line"
+done < "$HOME/.config/packages/apt-packages.txt"
+
+if [ -n "$packages" ]; then
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq $packages
+fi
+
+echo "[10-apt-packages] done"
+{{ end -}}

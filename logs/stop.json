@@ -1,0 +1,18 @@
+[
+  {
+    "session_id": "b6292e94-558d-4174-8cff-d25883b59f35",
+    "transcript_path": "/home/erewhon/.claude/projects/-home-erewhon-Projects-erewhon-dotfiles/b6292e94-558d-4174-8cff-d25883b59f35.jsonl",
+    "cwd": "/home/erewhon/Projects/erewhon/dotfiles",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "session_id": "b6292e94-558d-4174-8cff-d25883b59f35",
+    "transcript_path": "/home/erewhon/.claude/projects/-home-erewhon-Projects-erewhon-dotfiles/b6292e94-558d-4174-8cff-d25883b59f35.jsonl",
+    "cwd": "/home/erewhon/Projects/erewhon/dotfiles",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  }
+]

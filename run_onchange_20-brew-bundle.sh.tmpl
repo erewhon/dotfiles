@@ -1,0 +1,25 @@
+#!/bin/sh
+# {{ include "dot_config/Brewfile.tmpl" | sha256sum }}
+# Run brew bundle when Brewfile changes.
+
+{{ $host := dict "is_remote" true "has_gui" false "has_brew" false "has_apt" false "is_personal" false -}}
+{{ if hasKey .hosts .chezmoi.hostname -}}
+{{   $host = index .hosts .chezmoi.hostname -}}
+{{ end -}}
+
+{{ if not (get $host "has_brew") -}}
+echo "[20-brew-bundle] skipping: host has no brew"
+exit 0
+{{ else -}}
+
+set -e
+
+if ! command -v brew >/dev/null 2>&1; then
+    echo "[20-brew-bundle] brew not found, skipping"
+    exit 0
+fi
+
+echo "[20-brew-bundle] running brew bundle..."
+brew bundle --no-lock --file="$HOME/.config/Brewfile"
+echo "[20-brew-bundle] done"
+{{ end -}}

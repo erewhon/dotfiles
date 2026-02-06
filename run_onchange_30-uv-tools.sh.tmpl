@@ -1,0 +1,21 @@
+#!/bin/sh
+# {{ include "dot_config/packages/uv-tools.txt" | sha256sum }}
+# Install Python tools via uv when uv-tools.txt changes.
+
+set -e
+
+if ! command -v uv >/dev/null 2>&1; then
+    echo "[30-uv-tools] uv not found, skipping"
+    exit 0
+fi
+
+echo "[30-uv-tools] installing uv tools..."
+
+while IFS= read -r line; do
+    line=$(echo "$line" | sed 's/#.*//' | xargs)
+    [ -z "$line" ] && continue
+    echo "  installing $line"
+    uv tool install "$line" || echo "  warning: failed to install $line"
+done < "$HOME/.config/packages/uv-tools.txt"
+
+echo "[30-uv-tools] done"

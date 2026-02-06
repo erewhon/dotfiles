@@ -1,0 +1,21 @@
+#!/bin/sh
+# {{ include "dot_config/packages/cargo-tools.txt" | sha256sum }}
+# Install Rust tools via cargo when cargo-tools.txt changes.
+
+set -e
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "[32-cargo-tools] cargo not found, skipping"
+    exit 0
+fi
+
+echo "[32-cargo-tools] installing cargo tools..."
+
+while IFS= read -r line; do
+    line=$(echo "$line" | sed 's/#.*//' | xargs)
+    [ -z "$line" ] && continue
+    echo "  installing $line"
+    cargo install "$line" || echo "  warning: failed to install $line"
+done < "$HOME/.config/packages/cargo-tools.txt"
+
+echo "[32-cargo-tools] done"
