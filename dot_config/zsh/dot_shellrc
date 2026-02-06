@@ -273,6 +273,21 @@ function send_slow_multiline() {
 }
 
 
+# Open PR and auto-merge (after pushing separately)
+gpm() {
+    local base="${1:-main}"
+    gh pr create --fill --base "$base" && \
+    gh pr merge --auto --squash --delete-branch
+}
+
+# Push, open PR, auto-merge, and clean up branch
+gship() {
+    local base="${1:-main}"
+    git push -u origin HEAD && \
+    gh pr create --fill --base "$base" && \
+    gh pr merge --auto --squash --delete-branch
+}
+
 function mkts() {
     echo "Initializing new package for Typescript"
     npm init -y
