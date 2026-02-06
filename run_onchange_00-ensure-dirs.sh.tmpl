@@ -1,0 +1,16 @@
+#!/bin/sh
+# {{ include "run_onchange_00-ensure-dirs.sh.tmpl" | sha256sum }}
+# Ensure required directories and placeholder files exist.
+
+set -e
+
+mkdir -p "$HOME/.local/state/oh-my-zsh" \
+         "$HOME/.local/state/zsh" \
+         "$HOME/.tmux/plugins/tpm" \
+         "$HOME/.config/tmux/plugins" \
+         "$HOME/.config/packages" \
+         "$HOME/.kube/config-files"
+
+touch "$HOME/.sesh-local" "$HOME/.zshrc-local"
+
+echo "[00-ensure-dirs] directories and placeholders created"

@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# brew-drift — compare installed Homebrew packages against the Brewfile.
+# Shows manually-installed extras and missing packages.
+#
+# Usage:
+#   brew-drift          Show drift report
+#   brew-drift --dump   Snapshot current installed state to stdout
+
+set -euo pipefail
+
+BREWFILE="${BREWFILE:-$HOME/.config/Brewfile}"
+
+usage() {
+    echo "Usage: brew-drift [--dump]"
+    echo "  (no args)   Show drift report vs Brewfile"
+    echo "  --dump      Dump currently installed formulae/casks as Brewfile lines"
+    exit 0
+}
+
+dump_installed() {
+    echo "# brew-drift snapshot $(date -Iseconds)"
+    brew leaves --installed-on-request | while read -r pkg; do
+        echo "brew \"$pkg\""
+    done
+    brew list --cask -1 2>/dev/null | while read -r pkg; do
+        echo "cask \"$pkg\""
+    done
+}
+
+drift_report() {
+    if [ ! -f "$BREWFILE" ]; then
+        echo "error: Brewfile not found at $BREWFILE" >&2
+        exit 1
+    fi
+
+    # Parse expected packages from Brewfile
+    local expected_formulae expected_casks
+    expected_formulae=$(grep -E '^\s*brew\s+"' "$BREWFILE" | sed 's/.*brew\s*"\([^"]*\)".*/\1/' | sort)
+    expected_casks=$(grep -E '^\s*cask\s+"' "$BREWFILE" | sed 's/.*cask\s*"\([^"]*\)".*/\1/' | sort)
+
+    # Get installed packages
+    local installed_formulae installed_casks
+    installed_formulae=$(brew leaves --installed-on-request | sort)
+    installed_casks=$(brew list --cask -1 2>/dev/null | sort)
+
+    # Compute diffs
+    local extra_formulae missing_formulae extra_casks missing_casks
+    extra_formulae=$(comm -23 <(echo "$installed_formulae") <(echo "$expected_formulae"))
+    missing_formulae=$(comm -13 <(echo "$installed_formulae") <(echo "$expected_formulae"))
+    extra_casks=$(comm -23 <(echo "$installed_casks") <(echo "$expected_casks"))
+    missing_casks=$(comm -13 <(echo "$installed_casks") <(echo "$expected_casks"))
+
+    local has_drift=0
+
+    if [ -n "$extra_formulae" ]; then
+        echo "=== Extra formulae (installed but not in Brewfile) ==="
+        echo "$extra_formulae" | sed 's/^/  + /'
+        echo
+        has_drift=1
+    fi
+
+    if [ -n "$missing_formulae" ]; then
+        echo "=== Missing formulae (in Brewfile but not installed) ==="
+        echo "$missing_formulae" | sed 's/^/  - /'
+        echo
+        has_drift=1
+    fi
+
+    if [ -n "$extra_casks" ]; then
+        echo "=== Extra casks (installed but not in Brewfile) ==="
+        echo "$extra_casks" | sed 's/^/  + /'
+        echo
+        has_drift=1
+    fi
+
+    if [ -n "$missing_casks" ]; then
+        echo "=== Missing casks (in Brewfile but not installed) ==="
+        echo "$missing_casks" | sed 's/^/  - /'
+        echo
+        has_drift=1
+    fi
+
+    if [ "$has_drift" -eq 0 ]; then
+        echo "No drift detected. Installed packages match the Brewfile."
+    fi
+}
+
+case "${1:-}" in
+    --help|-h) usage ;;
+    --dump)    dump_installed ;;
+    "")        drift_report ;;
+    *)         echo "Unknown option: $1" >&2; usage ;;
+esac

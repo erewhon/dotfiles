@@ -55,6 +55,23 @@ if [[ -o login ]]; then
     else
         # do nothing for now...   nice and clean!
     fi
+
+    # Check for upstream chezmoi dotfiles changes (background, once daily)
+    _chezmoi_update_stamp="$XDG_CACHE_HOME/.last_chezmoi_check"
+    _chezmoi_today=$(date +'%F')
+    if [ "$(cat "$_chezmoi_update_stamp" 2>/dev/null)" != "$_chezmoi_today" ]; then
+        {
+            echo "$_chezmoi_today" > "$_chezmoi_update_stamp"
+            _src="$(chezmoi source-path 2>/dev/null)"
+            if [ -n "$_src" ] && [ -d "$_src/.git" -o -d "$_src/.jj" ]; then
+                git -C "$_src" fetch --quiet 2>/dev/null
+                _behind=$(git -C "$_src" rev-list --count HEAD..@{u} 2>/dev/null)
+                if [ "${_behind:-0}" -gt 0 ]; then
+                    echo "\033[33m[dotfiles] $_behind upstream commit(s) — run 'chezmoi update' to sync\033[0m"
+                fi
+            fi
+        } &!
+    fi
 fi
 
 if command -v starship &> /dev/null; then

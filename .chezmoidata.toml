@@ -1,0 +1,20 @@
+# Host classification data for chezmoi templates.
+# Unknown hosts default to safe/minimal (remote, no GUI, no brew).
+#
+# Usage in templates:
+#   {{ $host := index .hosts .chezmoi.hostname | default .host_defaults }}
+#   {{ if $host.has_brew }}...{{ end }}
+
+[host_defaults]
+  is_remote   = true
+  has_gui     = false
+  has_brew    = false
+  has_apt     = false
+  is_personal = false
+
+[hosts.delphi]
+  is_remote   = false
+  has_gui     = true
+  has_brew    = true
+  has_apt     = true
+  is_personal = true

@@ -1,0 +1,21 @@
+#!/bin/sh
+# {{ include "dot_config/packages/npm-globals.txt" | sha256sum }}
+# Install global npm packages when npm-globals.txt changes.
+
+set -e
+
+if ! command -v npm >/dev/null 2>&1; then
+    echo "[31-npm-globals] npm not found, skipping"
+    exit 0
+fi
+
+echo "[31-npm-globals] installing global npm packages..."
+
+while IFS= read -r line; do
+    line=$(echo "$line" | sed 's/#.*//' | xargs)
+    [ -z "$line" ] && continue
+    echo "  installing $line"
+    npm install -g "$line" || echo "  warning: failed to install $line"
+done < "$HOME/.config/packages/npm-globals.txt"
+
+echo "[31-npm-globals] done"

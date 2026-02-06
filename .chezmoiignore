@@ -1,3 +1,26 @@
 README.md
 .local/state/oh-my-zsh/custom/themes/powerlevel10k/**/*.zwc
 .local/state/oh-my-zsh/plugins/chucknorris/fortunes/chucknorris.dat
+
+# Host classification: look up current host, fall back to defaults
+{{ $host := dict "is_remote" true "has_gui" false "has_brew" false "has_apt" false "is_personal" false }}
+{{ if hasKey .hosts .chezmoi.hostname }}
+{{   $host = index .hosts .chezmoi.hostname }}
+{{ end }}
+
+# Skip Brewfile on non-brew hosts
+{{ if not (get $host "has_brew") }}
+.config/Brewfile
+{{ end }}
+
+# Skip desktop-only configs on remote hosts
+{{ if get $host "is_remote" }}
+.config/ghostty
+.config/iterm
+.config/wezterm
+{{ end }}
+
+# Skip macOS-only configs on Linux
+{{ if eq .chezmoi.os "linux" }}
+.config/iterm
+{{ end }}

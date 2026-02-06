@@ -1,0 +1,5 @@
+# Rust tools installed via `cargo install`
+# One tool per line. Comments with #.
+
+# Add tools as needed, e.g.:
+# starship

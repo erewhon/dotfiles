@@ -1,0 +1,5 @@
+# Python tools installed via `uv tool install`
+# One tool per line. Comments with #.
+
+posting
+harlequin
