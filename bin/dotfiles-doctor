@@ -1,0 +1,478 @@
+#!/usr/bin/env bash
+# dotfiles-doctor — diagnose dotfiles health on this machine.
+# Runs read-only checks across chezmoi, packages, shell, and tools.
+#
+# Usage:
+#   dotfiles-doctor          Run all checks
+#   dotfiles-doctor --help   Show this help
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Color / formatting
+# ---------------------------------------------------------------------------
+if [ -t 1 ]; then
+    GREEN=$'\033[32m'  RED=$'\033[31m'  YELLOW=$'\033[33m'
+    BOLD=$'\033[1m'    RESET=$'\033[0m'
+else
+    GREEN=""  RED=""  YELLOW=""  BOLD=""  RESET=""
+fi
+
+PASS=0
+FAIL=0
+
+pass() { printf "  ${GREEN}✓${RESET} %s\n" "$*"; PASS=$((PASS + 1)); }
+fail() { printf "  ${RED}✗${RESET} %s\n" "$*"; FAIL=$((FAIL + 1)); }
+warn() { printf "  ${YELLOW}!${RESET} %s\n" "$*"; }
+section() { printf "\n${BOLD}=== %s ===${RESET}\n" "$*"; }
+
+usage() {
+    echo "Usage: dotfiles-doctor [--help]"
+    echo "  (no args)   Run all health checks"
+    exit 0
+}
+
+# Strip comments and blank lines from a package list file (same as run_onchange_* scripts)
+read_pkg_list() {
+    local file="$1"
+    [ -f "$file" ] || return 0
+    while IFS= read -r line; do
+        line=$(echo "$line" | sed 's/#.*//' | xargs)
+        [ -z "$line" ] && continue
+        echo "$line"
+    done < "$file"
+}
+
+# ---------------------------------------------------------------------------
+# Host profile (cached for reuse across sections)
+# ---------------------------------------------------------------------------
+HOST_PROFILE=""   # JSON object with resolved flags
+
+resolve_host_profile() {
+    if [ -n "$HOST_PROFILE" ]; then return; fi
+    command -v chezmoi &>/dev/null || return 0
+    # chezmoi execute-template has access to .chezmoidata.toml values
+    local tmpl='{{ $h := .chezmoi.hostname }}{{ $prof := .host_defaults }}{{ if hasKey .hosts $h }}{{ $prof = index .hosts $h }}{{ end }}{ "known": {{ if hasKey .hosts $h }}true{{ else }}false{{ end }}, "is_remote": {{ $prof.is_remote }}, "has_gui": {{ $prof.has_gui }}, "has_brew": {{ $prof.has_brew }}, "has_apt": {{ $prof.has_apt }}, "is_personal": {{ $prof.is_personal }} }'
+    HOST_PROFILE=$(chezmoi execute-template "$tmpl" 2>/dev/null) || HOST_PROFILE=""
+}
+
+profile_flag() {
+    [ -n "$HOST_PROFILE" ] || return 1
+    local val
+    val=$(echo "$HOST_PROFILE" | jq -r ".$1" 2>/dev/null)
+    [[ "$val" == "true" ]]
+}
+
+# ---------------------------------------------------------------------------
+# 1. Host Identity
+# ---------------------------------------------------------------------------
+check_host_identity() {
+    section "Host Identity"
+
+    local hostname os_id
+    hostname=$(hostname -s 2>/dev/null || hostname)
+    os_id="unknown"
+    if [ -f /etc/os-release ]; then
+        os_id=$(. /etc/os-release && echo "${ID:-unknown}")
+    elif [[ "$(uname)" == "Darwin" ]]; then
+        os_id="darwin"
+    fi
+
+    printf "  Hostname: %s\n" "$hostname"
+    printf "  OS:       %s (%s)\n" "$(uname)" "$os_id"
+
+    resolve_host_profile
+
+    if [ -z "$HOST_PROFILE" ]; then
+        warn "Could not read host profile (chezmoi or jq missing?)"
+        return
+    fi
+
+    local known
+    known=$(echo "$HOST_PROFILE" | jq -r '.known' 2>/dev/null)
+    if [[ "$known" == "true" ]]; then
+        pass "Host '$hostname' recognized in .chezmoidata.toml"
+    else
+        warn "Host '$hostname' not in .chezmoidata.toml — using defaults"
+    fi
+
+    local flags=("is_remote" "has_gui" "has_brew" "has_apt" "is_personal")
+    local profile_line="  Profile: "
+    for flag in "${flags[@]}"; do
+        local val
+        val=$(echo "$HOST_PROFILE" | jq -r ".$flag" 2>/dev/null)
+        profile_line+=" ${flag}=${val}"
+    done
+    printf "%s\n" "$profile_line"
+}
+
+# ---------------------------------------------------------------------------
+# 2. Core Tools
+# ---------------------------------------------------------------------------
+check_core_tools() {
+    section "Core Tools"
+
+    local tools=("chezmoi" "git" "zsh" "tmux" "nvim" "jj" "starship")
+
+    profile_flag has_brew && tools+=("brew") || true
+    profile_flag has_apt  && tools+=("apt")  || true
+
+    for cmd in "${tools[@]}"; do
+        if command -v "$cmd" &>/dev/null; then
+            pass "$cmd"
+        else
+            fail "$cmd not found"
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------------
+# 3. Chezmoi State
+# ---------------------------------------------------------------------------
+check_chezmoi_state() {
+    section "Chezmoi State"
+
+    if ! command -v chezmoi &>/dev/null; then
+        fail "chezmoi not installed — skipping"
+        return
+    fi
+
+    local status
+    status=$(chezmoi status 2>/dev/null) || { fail "chezmoi status failed"; return; }
+
+    if [ -z "$status" ]; then
+        pass "All managed files up to date"
+    else
+        local count
+        count=$(echo "$status" | wc -l | xargs)
+        fail "$count file(s) differ from managed state:"
+        echo "$status" | sed 's/^/      /'
+    fi
+
+    # Check externals
+    local externals=(
+        "$HOME/.local/state/oh-my-zsh"
+        "$HOME/.local/state/oh-my-zsh/custom/plugins/zsh-autosuggestions"
+        "$HOME/.local/state/oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+        "$HOME/.local/state/oh-my-zsh/custom/themes/powerlevel10k"
+        "$HOME/.tmux/plugins/tpm"
+    )
+    local labels=(
+        "oh-my-zsh"
+        "zsh-autosuggestions plugin"
+        "zsh-syntax-highlighting plugin"
+        "powerlevel10k theme"
+        "tmux plugin manager (tpm)"
+    )
+
+    for i in "${!externals[@]}"; do
+        if [ -d "${externals[$i]}" ]; then
+            pass "${labels[$i]} present"
+        else
+            fail "${labels[$i]} missing (${externals[$i]})"
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------------
+# 4. Package Managers & Packages
+# ---------------------------------------------------------------------------
+check_brew_packages() {
+    if ! command -v brew &>/dev/null; then
+        return
+    fi
+
+    section "Packages: Homebrew"
+
+    local brewfile="$HOME/.config/Brewfile"
+    if [ ! -f "$brewfile" ]; then
+        warn "Brewfile not found at $brewfile"
+        return
+    fi
+
+    local installed missing_count total
+    installed=$(brew leaves --installed-on-request 2>/dev/null | sort)
+    missing_count=0
+    total=0
+
+    # Parse expected formulae — handle both `brew "pkg"` syntax and plain package names
+    local expected
+    if grep -qE '^\s*brew\s+"' "$brewfile" 2>/dev/null; then
+        expected=$(grep -E '^\s*brew\s+"' "$brewfile" | sed 's/.*brew\s*"\([^"]*\)".*/\1/' | sort)
+    else
+        expected=$(read_pkg_list "$brewfile" | sort)
+    fi
+
+    while IFS= read -r pkg; do
+        [ -z "$pkg" ] && continue
+        # Skip tap/cask directives
+        [[ "$pkg" == tap* ]] || [[ "$pkg" == cask* ]] && continue
+        total=$((total + 1))
+        if ! echo "$installed" | grep -qx "$pkg"; then
+            fail "formula missing: $pkg"
+            missing_count=$((missing_count + 1))
+        fi
+    done <<< "$expected"
+
+    if [ "$missing_count" -eq 0 ] && [ "$total" -gt 0 ]; then
+        pass "$total/$total formulae installed"
+    fi
+
+    # Casks
+    local expected_casks installed_casks
+    expected_casks=$(grep -E '^\s*cask\s+"' "$brewfile" 2>/dev/null | sed 's/.*cask\s*"\([^"]*\)".*/\1/' | sort) || true
+    if [ -n "$expected_casks" ]; then
+        installed_casks=$(brew list --cask -1 2>/dev/null | sort)
+        local cask_total=0 cask_missing=0
+        while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            cask_total=$((cask_total + 1))
+            if ! echo "$installed_casks" | grep -qx "$pkg"; then
+                fail "cask missing: $pkg"
+                cask_missing=$((cask_missing + 1))
+            fi
+        done <<< "$expected_casks"
+
+        if [ "$cask_missing" -eq 0 ] && [ "$cask_total" -gt 0 ]; then
+            pass "$cask_total/$cask_total casks installed"
+        fi
+    fi
+}
+
+check_apt_packages() {
+    if ! command -v dpkg &>/dev/null; then
+        return
+    fi
+
+    local pkg_file="$HOME/.config/packages/apt-packages.txt"
+    [ -f "$pkg_file" ] || return 0
+
+    section "Packages: apt"
+
+    local total=0 missing_count=0
+    while IFS= read -r pkg; do
+        total=$((total + 1))
+        if ! dpkg -s "$pkg" &>/dev/null; then
+            fail "apt package missing: $pkg"
+            missing_count=$((missing_count + 1))
+        fi
+    done < <(read_pkg_list "$pkg_file")
+
+    if [ "$missing_count" -eq 0 ] && [ "$total" -gt 0 ]; then
+        pass "$total/$total apt packages installed"
+    fi
+}
+
+check_uv_tools() {
+    local pkg_file="$HOME/.config/packages/uv-tools.txt"
+    [ -f "$pkg_file" ] || return 0
+
+    local pkgs
+    pkgs=$(read_pkg_list "$pkg_file")
+    [ -z "$pkgs" ] && return 0
+
+    section "Packages: uv tools"
+
+    local total=0 missing_count=0
+    while IFS= read -r tool; do
+        total=$((total + 1))
+        if ! command -v "$tool" &>/dev/null; then
+            fail "uv tool not on PATH: $tool"
+            missing_count=$((missing_count + 1))
+        fi
+    done <<< "$pkgs"
+
+    if [ "$missing_count" -eq 0 ] && [ "$total" -gt 0 ]; then
+        pass "$total/$total uv tools on PATH"
+    fi
+}
+
+check_npm_globals() {
+    local pkg_file="$HOME/.config/packages/npm-globals.txt"
+    [ -f "$pkg_file" ] || return 0
+
+    local pkgs
+    pkgs=$(read_pkg_list "$pkg_file")
+    [ -z "$pkgs" ] && return 0
+
+    section "Packages: npm globals"
+
+    local total=0 missing_count=0
+    while IFS= read -r pkg; do
+        total=$((total + 1))
+        # npm globals may put binaries under a different name; check npm list too
+        if ! npm list -g "$pkg" &>/dev/null 2>&1; then
+            fail "npm global missing: $pkg"
+            missing_count=$((missing_count + 1))
+        fi
+    done <<< "$pkgs"
+
+    if [ "$missing_count" -eq 0 ] && [ "$total" -gt 0 ]; then
+        pass "$total/$total npm globals installed"
+    fi
+}
+
+check_cargo_tools() {
+    local pkg_file="$HOME/.config/packages/cargo-tools.txt"
+    [ -f "$pkg_file" ] || return 0
+
+    local pkgs
+    pkgs=$(read_pkg_list "$pkg_file")
+    [ -z "$pkgs" ] && return 0
+
+    section "Packages: cargo tools"
+
+    local total=0 missing_count=0
+    while IFS= read -r tool; do
+        total=$((total + 1))
+        if ! command -v "$tool" &>/dev/null; then
+            fail "cargo tool not on PATH: $tool"
+            missing_count=$((missing_count + 1))
+        fi
+    done <<< "$pkgs"
+
+    if [ "$missing_count" -eq 0 ] && [ "$total" -gt 0 ]; then
+        pass "$total/$total cargo tools on PATH"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# 5. Shell Environment
+# ---------------------------------------------------------------------------
+check_shell() {
+    section "Shell Environment"
+
+    if [[ "${SHELL:-}" == */zsh ]]; then
+        pass "Login shell is zsh"
+    else
+        fail "Login shell is '${SHELL:-unset}' (expected zsh)"
+    fi
+
+    if [ -d "$HOME/.local/state/oh-my-zsh" ]; then
+        pass "oh-my-zsh installed"
+    else
+        fail "oh-my-zsh not found"
+    fi
+
+    local plugins_dir="$HOME/.local/state/oh-my-zsh/custom/plugins"
+    for plugin in zsh-autosuggestions zsh-syntax-highlighting; do
+        if [ -d "$plugins_dir/$plugin" ]; then
+            pass "$plugin present"
+        else
+            fail "$plugin missing"
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------------
+# 6. Neovim Health
+# ---------------------------------------------------------------------------
+check_neovim() {
+    section "Neovim Health"
+
+    if command -v nvim &>/dev/null; then
+        pass "nvim installed"
+    else
+        fail "nvim not found"
+        return
+    fi
+
+    if command -v luarocks &>/dev/null; then
+        pass "luarocks installed"
+    else
+        fail "luarocks not found (required by neorg)"
+    fi
+
+    if command -v lua5.1 &>/dev/null || command -v luajit &>/dev/null; then
+        pass "lua5.1 or luajit available"
+    else
+        fail "neither lua5.1 nor luajit found"
+    fi
+
+    local lockfile="$HOME/.config/nvim/lazy-lock.json"
+    if [ -f "$lockfile" ]; then
+        pass "lazy.nvim lock file exists"
+    else
+        fail "lazy.nvim lock file missing ($lockfile)"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# 7. SSH & Git
+# ---------------------------------------------------------------------------
+check_ssh_git() {
+    section "SSH & Git"
+
+    if [ -d "$HOME/.ssh" ]; then
+        local perms
+        perms=$(stat -c '%a' "$HOME/.ssh" 2>/dev/null || stat -f '%Lp' "$HOME/.ssh" 2>/dev/null)
+        if [ "$perms" = "700" ]; then
+            pass "~/.ssh exists with correct permissions (700)"
+        else
+            fail "~/.ssh permissions are $perms (expected 700)"
+        fi
+    else
+        fail "~/.ssh directory not found"
+    fi
+
+    if ls "$HOME/.ssh/id_"* &>/dev/null; then
+        pass "SSH key(s) found"
+    else
+        fail "No SSH keys found in ~/.ssh/"
+    fi
+
+    local git_name git_email
+    git_name=$(git config user.name 2>/dev/null || true)
+    git_email=$(git config user.email 2>/dev/null || true)
+    if [ -n "$git_name" ]; then
+        pass "git user.name set ($git_name)"
+    else
+        fail "git user.name not set"
+    fi
+    if [ -n "$git_email" ]; then
+        pass "git user.email set ($git_email)"
+    else
+        fail "git user.email not set"
+    fi
+
+    if command -v gh &>/dev/null; then
+        if gh auth status &>/dev/null; then
+            pass "gh CLI authenticated"
+        else
+            fail "gh CLI not authenticated"
+        fi
+    else
+        fail "gh CLI not found"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+case "${1:-}" in
+    --help|-h) usage ;;
+    "")        ;;
+    *)         echo "Unknown option: $1" >&2; usage ;;
+esac
+
+check_host_identity
+check_core_tools
+check_chezmoi_state
+check_brew_packages
+check_apt_packages
+check_uv_tools
+check_npm_globals
+check_cargo_tools
+check_shell
+check_neovim
+check_ssh_git
+
+# Summary
+echo
+if [ "$FAIL" -eq 0 ]; then
+    printf "${GREEN}${BOLD}All %d checks passed.${RESET}\n" "$PASS"
+else
+    printf "${BOLD}%d checks passed, ${RED}%d issues found.${RESET}\n" "$PASS" "$FAIL"
+fi
+
+exit $(( FAIL > 0 ? 1 : 0 ))
