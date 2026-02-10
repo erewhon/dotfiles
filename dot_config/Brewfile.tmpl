@@ -1,46 +1,150 @@
 # Homebrew Brewfile — managed by chezmoi
 # `brew bundle --file=~/.config/Brewfile`
+{{ $host := .host_defaults }}{{ if hasKey .hosts .chezmoi.hostname }}{{ $host = index .hosts .chezmoi.hostname }}{{ end -}}
 
 # Taps
 tap "homebrew/bundle"
+tap "adembc/tap"
+tap "charmbracelet/tap"
 tap "erewhon/tap"
 
-# CLI tools
-brew "atuin"
+# Core CLI tools
 brew "bat"
-brew "direnv"
+brew "bat-extras"
+brew "coreutils"
+brew "diffstat"
+brew "duf"
+brew "dust"
 brew "eza"
-brew "fastfetch"
 brew "fd"
 brew "fzf"
-brew "gum"
+brew "gnu-sed"
 brew "jq"
-brew "lazyjj"
-brew "luarocks"
-brew "mosh"
-brew "neovim"
-brew "opencode"
+brew "lnav"
+brew "procs"
+brew "pv"
 brew "ripgrep"
-brew "sesh"
+brew "rlwrap"
+brew "rsync"
+brew "tree"
+brew "wget"
+brew "xh"
+brew "yq"
+
+# Shell & terminal
+brew "atuin"
+brew "direnv"
+brew "fastfetch"
+brew "fish"
+brew "gum"
+brew "nu"
 brew "starship"
-brew "tmux"
-brew "tmuxinator"
 brew "zoxide"
+brew "zsh"
+
+# Editor & TUI
+brew "bottom"
+brew "broot"
+brew "btop"
+brew "fx"
+brew "glow"
+brew "lazygit"
+brew "neovim"
+brew "yazi"
 
 # Development
+brew "chezmoi"
+brew "cloc"
+brew "editorconfig"
+brew "gh"
+brew "git-delta"
 brew "go"
-brew "node"
+brew "node@24"
+brew "pnpm"
+brew "prettier"
+brew "ruff"
+brew "shellcheck"
+brew "shfmt"
+brew "tokei"
+brew "ty"
 brew "uv"
+brew "zig"
 
-# Personal tools
-brew "agent-monitor"
-brew "protectinator"
+# Neovim deps
+brew "luarocks"
+brew "tree-sitter"
+brew "tree-sitter-cli"
+
+# Tmux
+brew "lazyjj"
+brew "sesh"
+brew "tmux"
+
+# Networking & remote
+brew "adembc/tap/lazyssh"
+brew "charmbracelet/tap/crush"
+brew "httpie"
+brew "rclone"
+brew "socat"
+brew "sshs"
+
+# Media & docs
+brew "asciinema"
+brew "exiftool"
+brew "ffmpeg"
+brew "graphviz"
+brew "imagemagick"
+brew "pandoc"
+brew "tectonic"
 
 # AI tools
-brew "aicommit2"
+brew "aider"
+brew "opencode"
 
+# Data & cloud
+brew "awscli"
+brew "aws-shell"
+brew "pipx"
+brew "redis"
+
+# Kubernetes & infra
+brew "act"
+brew "arkade"
+brew "eksctl"
+brew "k3sup"
+brew "k9s"
+brew "kubernetes-cli"
+
+{{ if $host.is_personal -}}
+# Personal tools
+brew "erewhon/tap/agent-monitor"
+brew "erewhon/tap/protectinator"
+
+# Fun & entertainment
+brew "asciiquarium"
+brew "fortune"
+brew "neofetch"
+brew "onefetch"
+brew "yt-dlp"
+
+# Local AI
+brew "ollama"
+
+{{ end -}}
+{{ if eq .chezmoi.os "linux" -}}
+# Linux-specific
+brew "btrfs-progs"
+brew "psutils"
+
+{{ end -}}
+{{ if and $host.is_personal (eq .chezmoi.os "linux") -}}
+brew "lizardbyte/homebrew/sunshine"
+tap "lizardbyte/homebrew"
+
+{{ end -}}
 {{ if eq .chezmoi.os "darwin" -}}
 # macOS casks
 cask "ghostty"
 cask "wezterm"
+
 {{ end -}}
