@@ -7,12 +7,47 @@
 
 [host_defaults]
   is_remote   = true
-  has_gui     = false
-  has_brew    = false
+  has_gui     = true
+  has_brew    = true
   has_apt     = false
   is_personal = false
 
+[hosts.archimedes]
+  is_remote   = false
+  has_gui     = true
+  has_brew    = true
+  has_apt     = true
+  is_personal = true
+
+[hosts.athena]
+  is_remote   = false
+  has_gui     = true
+  has_brew    = true
+  has_apt     = false
+  is_personal = true
+
 [hosts.delphi]
+  is_remote   = false
+  has_gui     = true
+  has_brew    = true
+  has_apt     = true
+  is_personal = true
+
+[hosts.hermes]
+  is_remote   = false
+  has_gui     = true
+  has_brew    = true
+  has_apt     = false
+  is_personal = true
+
+[hosts.maia]
+  is_remote   = false
+  has_gui     = true
+  has_brew    = true
+  has_apt     = true
+  is_personal = true
+
+[hosts.merope]
   is_remote   = false
   has_gui     = true
   has_brew    = true
