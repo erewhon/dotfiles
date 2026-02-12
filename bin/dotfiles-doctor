@@ -377,18 +377,6 @@ check_neovim() {
         return
     fi
 
-    if command -v luarocks &>/dev/null; then
-        pass "luarocks installed"
-    else
-        fail "luarocks not found (required by neorg)"
-    fi
-
-    if command -v lua5.1 &>/dev/null || command -v luajit &>/dev/null; then
-        pass "lua5.1 or luajit available"
-    else
-        fail "neither lua5.1 nor luajit found"
-    fi
-
     local lockfile="$HOME/.config/nvim/lazy-lock.json"
     if [ -f "$lockfile" ]; then
         pass "lazy.nvim lock file exists"
