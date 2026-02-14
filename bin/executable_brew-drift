@@ -35,8 +35,8 @@ drift_report() {
 
     # Parse expected packages from Brewfile
     local expected_formulae expected_casks
-    expected_formulae=$(grep -E '^\s*brew\s+"' "$BREWFILE" | sed 's/.*brew\s*"\([^"]*\)".*/\1/' | sort)
-    expected_casks=$(grep -E '^\s*cask\s+"' "$BREWFILE" | sed 's/.*cask\s*"\([^"]*\)".*/\1/' | sort)
+    expected_formulae=$(grep -E '^\s*brew\s+"' "$BREWFILE" | sed -E 's/.*brew *"([^"]*)".*/\1/' | sort)
+    expected_casks=$(grep -E '^\s*cask\s+"' "$BREWFILE" | sed -E 's/.*cask *"([^"]*)".*/\1/' | sort)
 
     # Get installed packages
     local installed_formulae installed_casks
