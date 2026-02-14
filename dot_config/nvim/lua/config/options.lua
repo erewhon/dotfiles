@@ -8,10 +8,12 @@ vim.diagnostic.config({
 	virtual_lines = { current_line = true },
 })
 
-local dim = "#3a3530"
-vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesWarn", { fg = dim })
-vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesHint", { fg = dim })
-vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesInfo", { fg = dim })
-vim.api.nvim_set_hl(0, "DiagnosticWarn", { fg = dim })
-vim.api.nvim_set_hl(0, "DiagnosticHint", { fg = dim })
-vim.api.nvim_set_hl(0, "DiagnosticInfo", { fg = dim })
+-- Apply dim highlights after colorscheme loads so they don't get overridden
+vim.api.nvim_create_autocmd("ColorScheme", {
+	callback = function()
+		local dim = "#3a3530"
+		vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesWarn", { fg = dim })
+		vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesHint", { fg = dim })
+		vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesInfo", { fg = dim })
+	end,
+})
