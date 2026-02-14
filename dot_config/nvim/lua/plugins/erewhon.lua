@@ -95,6 +95,14 @@ return {
 		opts = {},
 	},
 
+	-- Disable render-markdown by default (use :RenderMarkdown toggle to enable)
+	{
+		"MeanderingProgrammer/render-markdown.nvim",
+		opts = {
+			enabled = false,
+		},
+	},
+
 	-- Fancy markdown rendering (LaTeX, tables, links, headings)
 	{
 		"OXY2DEV/markview.nvim",
