@@ -4,3 +4,7 @@
     autoCommit = true
 #   autoPush = true
 
+[age]
+    identity = "~/.config/chezmoi/key.txt"
+    recipient = "age1s0xlqq3jkyl65dgdltqsup3s8mqc4jchkqc4cec5wywlg62wkdfsgv69zl"
+
