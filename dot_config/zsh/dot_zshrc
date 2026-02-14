@@ -34,13 +34,13 @@ fi
 #
 if [[ -o login ]]; then
     #
-    # We don't want to go overboard (honest!), so display neofetch once per day, then fortune
+    # We don't want to go overboard (honest!), so display fastfetch once per day, then fortune
     #
     NOW=$( date +'%F %H:%M' )
 
-    if ! cmp -s $XDG_CACHE_HOME/.last_neofetch <( echo $NOW )
+    if ! cmp -s $XDG_CACHE_HOME/.last_fastfetch <( echo $NOW )
     then
-        echo $NOW > $XDG_CACHE_HOME/.last_neofetch
+        echo $NOW > $XDG_CACHE_HOME/.last_fastfetch
 
         if command -v fastfetch 2>&1 > /dev/null; then
             if [[ -z "$TMUX" ]]; then

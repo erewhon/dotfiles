@@ -216,7 +216,7 @@ growl() { echo -e $'\e]9;'${1}'\007' ; return  ; }
 doctor() {
   echo Verifying add-on commands
   # command -v rlwrap &> /dev/null || ''
-  for cmd in bat delta exa fd fx fzf go http jq neofetch node npm rlwrap tmux zoxide; do
+  for cmd in bat delta exa fd fx fzf go http jq fastfetch node npm rlwrap tmux zoxide; do
       echo -ne "\nchecking for ${cmd}... "
       command -v $cmd &> /dev/null || echo -n "missing command '${cmd}'"
   done
