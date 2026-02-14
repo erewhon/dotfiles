@@ -55,7 +55,6 @@ brew "yazi"
 
 # Security & secrets
 brew "age"
-brew "1password-cli"
 
 # Development
 brew "chezmoi"
@@ -147,6 +146,7 @@ tap "lizardbyte/homebrew"
 {{ end -}}
 {{ if eq .chezmoi.os "darwin" -}}
 # macOS casks
+cask "1password-cli"
 cask "ghostty"
 cask "wezterm"
 
