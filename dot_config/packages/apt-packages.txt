@@ -27,5 +27,4 @@ zsh
 # Misc utilities
 cowsay
 fortune-mod
-neofetch
 rlwrap
