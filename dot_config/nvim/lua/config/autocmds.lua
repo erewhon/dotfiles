@@ -10,13 +10,13 @@
 -- Dim diagnostic virtual lines highlights
 vim.api.nvim_create_autocmd("ColorScheme", {
 	callback = function()
-		local dim = "#3a3530"
+		local dim = "#6b6560"
 		vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesWarn", { fg = dim })
 		vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesHint", { fg = dim })
 		vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesInfo", { fg = dim })
 	end,
 })
-local dim = "#3a3530"
+local dim = "#6b6560"
 vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesWarn", { fg = dim })
 vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesHint", { fg = dim })
 vim.api.nvim_set_hl(0, "DiagnosticVirtualLinesInfo", { fg = dim })
