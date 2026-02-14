@@ -1,0 +1,25 @@
+#!/bin/bash
+# Fetch the chezmoi age key from 1Password if it doesn't already exist.
+# This runs once before any encrypted files are decrypted, enabling
+# fully automated bootstrap: `chezmoi init` + `op signin` = done.
+
+set -eu
+
+KEY_FILE="{{ .chezmoi.homeDir }}/.config/chezmoi/key.txt"
+
+if [ -f "$KEY_FILE" ]; then
+    echo "age key already exists at $KEY_FILE"
+    exit 0
+fi
+
+if ! command -v op >/dev/null 2>&1; then
+    echo "1Password CLI (op) not found. Install it and run: chezmoi apply"
+    echo "Or manually place your age key at $KEY_FILE"
+    exit 0
+fi
+
+echo "Fetching age key from 1Password..."
+mkdir -p "$(dirname "$KEY_FILE")"
+op read "op://Private/chezmoi age key/notesPlain" > "$KEY_FILE"
+chmod 600 "$KEY_FILE"
+echo "Age key installed at $KEY_FILE"
