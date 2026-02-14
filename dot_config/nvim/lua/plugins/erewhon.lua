@@ -1,4 +1,16 @@
 return {
+	-- Override LazyVim's LSP diagnostic display: no persistent inline text,
+	-- only show virtual lines on the current cursor line
+	{
+		"neovim/nvim-lspconfig",
+		opts = {
+			diagnostics = {
+				virtual_text = false,
+				virtual_lines = { current_line = true },
+			},
+		},
+	},
+
 	{
 		"nvim-orgmode/orgmode",
 		event = "VeryLazy",
