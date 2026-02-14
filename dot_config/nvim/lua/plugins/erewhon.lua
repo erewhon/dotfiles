@@ -48,7 +48,7 @@ return {
 
 	-- Cursorline/signcolumn changes color based on mode
 	{
-		"rasulomarern/reactive.nvim",
+		"rasulomaroff/reactive.nvim",
 		event = "VeryLazy",
 		opts = {
 			load = { "catppuccin-mocha-cursor", "catppuccin-mocha-cursorline" },
