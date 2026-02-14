@@ -6,7 +6,9 @@
 tap "homebrew/bundle"
 tap "adembc/tap"
 tap "charmbracelet/tap"
+tap "derailed/k9s"
 tap "erewhon/tap"
+tap "teamookla/speedtest"
 
 # Core CLI tools
 brew "bat"
@@ -19,6 +21,7 @@ brew "eza"
 brew "fd"
 brew "fzf"
 brew "gnu-sed"
+brew "jd"
 brew "jq"
 brew "lnav"
 brew "procs"
@@ -27,8 +30,10 @@ brew "ripgrep"
 brew "rlwrap"
 brew "rsync"
 brew "tree"
+brew "up"
 brew "wget"
 brew "xh"
+brew "xsv"
 brew "yq"
 
 # Shell & terminal
@@ -49,13 +54,17 @@ brew "broot"
 brew "btop"
 brew "fx"
 brew "glow"
+brew "htop"
 brew "lazygit"
+brew "mqttui"
+brew "neovide"
 brew "neovim"
 brew "yazi"
 
 # Security & secrets
 brew "1password-cli"
 brew "age"
+brew "nmap"
 
 # Development
 brew "chezmoi"
@@ -64,10 +73,14 @@ brew "editorconfig"
 brew "gh"
 brew "git-delta"
 brew "go"
+brew "jira-cli"
+brew "jupyterlab"
+brew "n"
 brew "node@24"
 brew "pnpm"
 brew "prettier"
 brew "ruff"
+brew "rust"
 brew "shellcheck"
 brew "shfmt"
 brew "tokei"
@@ -87,11 +100,15 @@ brew "tmux"
 
 # Networking & remote
 brew "adembc/tap/lazyssh"
+brew "autossh"
 brew "charmbracelet/tap/crush"
 brew "httpie"
+brew "mq"
 brew "rclone"
 brew "socat"
 brew "sshs"
+brew "teamookla/speedtest/speedtest"
+brew "tproxy"
 
 # Media & docs
 brew "asciinema"
@@ -104,21 +121,33 @@ brew "tectonic"
 
 # AI tools
 brew "aider"
+brew "block-goose-cli"
+brew "fabric-ai"
 brew "opencode"
 
 # Data & cloud
 brew "awscli"
 brew "aws-shell"
+brew "fits"
+brew "internetarchive"
 brew "pipx"
 brew "redis"
+brew "restic"
+brew "xan"
 
 # Kubernetes & infra
 brew "act"
 brew "arkade"
+brew "derailed/k9s/k9s"
 brew "eksctl"
+brew "helm"
 brew "k3sup"
-brew "k9s"
+brew "kubeseal"
 brew "kubernetes-cli"
+brew "kustomize"
+brew "stern"
+brew "tuios"
+brew "vcluster"
 
 {{ if $host.is_personal -}}
 # Personal tools
@@ -127,6 +156,7 @@ brew "erewhon/tap/protectinator"
 
 # Fun & entertainment
 brew "asciiquarium"
+brew "cmatrix"
 brew "fortune"
 brew "yt-dlp"
 
@@ -146,6 +176,12 @@ tap "lizardbyte/homebrew"
 
 {{ end -}}
 {{ if eq .chezmoi.os "darwin" -}}
+# macOS-specific
+brew "carthage"
+brew "cocoapods"
+brew "container"
+brew "lima"
+
 # macOS casks
 cask "ghostty"
 cask "wezterm"
