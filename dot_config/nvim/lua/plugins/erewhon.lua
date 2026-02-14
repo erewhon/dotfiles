@@ -94,4 +94,15 @@ return {
 		event = "BufReadPost",
 		opts = {},
 	},
+
+	-- Fancy markdown rendering (LaTeX, tables, links, headings)
+	{
+		"OXY2DEV/markview.nvim",
+		ft = { "markdown", "quarto", "rmd", "typst" },
+		dependencies = {
+			"nvim-treesitter/nvim-treesitter",
+			"echasnovski/mini.icons",
+		},
+		opts = {},
+	},
 }
