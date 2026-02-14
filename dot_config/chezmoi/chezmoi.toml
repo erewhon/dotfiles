@@ -1,4 +1,5 @@
 # We want to auto-commit changes. Maybe eventually push.
+encryption = "age"
 
 [git]
     autoCommit = true
