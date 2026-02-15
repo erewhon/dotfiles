@@ -7,18 +7,21 @@
 #   brew-stale              Show all packages sorted by last use
 #   brew-stale --days 30    Only show packages not used in 30+ days
 #   brew-stale --never      Only show packages never found in history
+#   brew-stale --all        Include libraries/deps (normally excluded)
 
 set -euo pipefail
 
 DAYS=""
 NEVER_ONLY=false
+INCLUDE_DEPS=false
 BREWFILE="${BREWFILE:-$HOME/.config/Brewfile}"
 
 usage() {
-    echo "Usage: brew-stale [--days N] [--never]"
+    echo "Usage: brew-stale [--days N] [--never] [--all]"
     echo "  (no args)    Show all packages sorted by staleness"
     echo "  --days N     Only show packages not used in N+ days"
     echo "  --never      Only show packages never found in history"
+    echo "  --all        Include libraries and deps (normally excluded)"
     echo "  --brewfile F Use a specific Brewfile (default: ~/.config/Brewfile)"
     exit 0
 }
@@ -28,6 +31,7 @@ while [[ $# -gt 0 ]]; do
         --help|-h) usage ;;
         --days) DAYS="$2"; shift 2 ;;
         --never) NEVER_ONLY=true; shift ;;
+        --all) INCLUDE_DEPS=true; shift ;;
         --brewfile) BREWFILE="$2"; shift 2 ;;
         *) echo "Unknown option: $1" >&2; usage ;;
     esac
@@ -37,6 +41,44 @@ if ! command -v atuin &>/dev/null; then
     echo "error: atuin is required but not installed" >&2
     exit 1
 fi
+
+# Packages that have binaries but are used indirectly by other tools.
+# These are not expected to appear in shell history.
+INDIRECT_USE_PACKAGES=(
+    # Neovim deps
+    luarocks
+    tree-sitter
+    tree-sitter-cli
+    # Build tools / language runtimes used by other tools
+    coreutils
+    gnu-sed
+    # Package managers invoked via scripts/CI, not directly
+    pipx
+    # Libraries and frameworks
+    btrfs-progs
+    editorconfig
+    # Node version managers (invoked rarely, manages node)
+    n
+)
+
+# Check if a formula is a known indirect-use package
+is_indirect() {
+    local formula="$1"
+    local short_name="${formula##*/}"
+    for pkg in "${INDIRECT_USE_PACKAGES[@]}"; do
+        [[ "$short_name" == "$pkg" ]] && return 0
+    done
+    return 1
+}
+
+# Check if a formula installs any user-facing binaries
+has_binaries() {
+    local formula="$1"
+    local short_name="${formula##*/}"
+    local bins
+    bins=$(brew list "$short_name" 2>/dev/null | grep -E '/s?bin/[^/]+$' || true)
+    [[ -n "$bins" ]]
+}
 
 # Get formulae from Brewfile
 get_brewfile_formulae() {
@@ -51,15 +93,11 @@ get_brewfile_formulae() {
 # Get binary names for a formula
 get_binaries() {
     local formula="$1"
-    # Get the short name (strip tap prefix)
     local short_name="${formula##*/}"
-
-    # List installed files and extract binary names from bin/ and sbin/
     local bins
     bins=$(brew list "$short_name" 2>/dev/null | grep -E '/s?bin/[^/]+$' | xargs -I{} basename {} 2>/dev/null | sort -u)
 
     if [[ -z "$bins" ]]; then
-        # Fallback: just try the formula short name itself
         echo "$short_name"
     else
         echo "$bins"
@@ -69,7 +107,6 @@ get_binaries() {
 # Search atuin for the last time a binary was used
 last_used() {
     local binary="$1"
-    # Search for the binary as the first word in a command
     local result
     result=$(atuin search --format "{time}" --limit 1 --search-mode prefix -- "$binary" 2>/dev/null | head -1)
 
@@ -95,6 +132,7 @@ days_ago() {
 
 # Collect results
 declare -a results=()
+declare -a skipped=()
 formulae=$(get_brewfile_formulae)
 total=$(echo "$formulae" | wc -l | tr -d ' ')
 current=0
@@ -103,7 +141,20 @@ echo "Scanning $total formulae..." >&2
 
 while IFS= read -r formula; do
     current=$((current + 1))
-    printf "\r  [%d/%d] %s" "$current" "$total" "$formula" >&2
+    short_name="${formula##*/}"
+    printf "\r  [%d/%d] %-30s" "$current" "$total" "$short_name" >&2
+
+    # Skip libraries and indirect-use packages unless --all
+    if [[ "$INCLUDE_DEPS" != true ]]; then
+        if is_indirect "$formula"; then
+            skipped+=("$formula (indirect dep)")
+            continue
+        fi
+        if ! has_binaries "$formula"; then
+            skipped+=("$formula (no binaries)")
+            continue
+        fi
+    fi
 
     # Get all binaries for this formula
     bins=$(get_binaries "$formula")
@@ -167,3 +218,12 @@ for entry in "${sorted[@]}"; do
         printf "%-35s %-25s %s\n" "$formula" "$age" "$binary"
     fi
 done
+
+# Show skipped summary
+if [[ ${#skipped[@]} -gt 0 ]]; then
+    echo "" >&2
+    echo "Skipped ${#skipped[@]} libraries/deps (use --all to include):" >&2
+    for s in "${skipped[@]}"; do
+        echo "  ~ $s" >&2
+    done
+fi
