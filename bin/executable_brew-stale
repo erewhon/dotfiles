@@ -130,6 +130,18 @@ days_ago() {
     echo $(( (now_epoch - then_epoch) / 86400 ))
 }
 
+# Progress display — only use \r trick if stderr is a terminal
+progress() {
+    if [[ -t 2 ]]; then
+        printf "\r\033[K  [%d/%d] %s" "$@" >&2
+    fi
+}
+progress_done() {
+    if [[ -t 2 ]]; then
+        printf "\r\033[K" >&2
+    fi
+}
+
 # Collect results
 declare -a results=()
 declare -a skipped=()
@@ -142,7 +154,7 @@ echo "Scanning $total formulae..." >&2
 while IFS= read -r formula; do
     current=$((current + 1))
     short_name="${formula##*/}"
-    printf "\r  [%d/%d] %-30s" "$current" "$total" "$short_name" >&2
+    progress "$current" "$total" "$short_name"
 
     # Skip libraries and indirect-use packages unless --all
     if [[ "$INCLUDE_DEPS" != true ]]; then
@@ -184,7 +196,7 @@ while IFS= read -r formula; do
     fi
 done <<< "$formulae"
 
-printf "\r%-60s\n" "" >&2
+progress_done
 
 # Sort results by days ago (most stale first)
 IFS=$'\n' sorted=($(printf '%s\n' "${results[@]}" | sort -t'|' -k1 -rn))
