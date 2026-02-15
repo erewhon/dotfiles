@@ -36,7 +36,7 @@ if [[ -o login ]]; then
     #
     # We don't want to go overboard (honest!), so display fastfetch once per day, then fortune
     #
-    NOW=$( date +'%F %H:%M' )
+    NOW=$( date +'%F' )
 
     if ! cmp -s $XDG_CACHE_HOME/.last_fastfetch <( echo $NOW )
     then
