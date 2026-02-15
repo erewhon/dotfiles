@@ -1,0 +1,389 @@
+#!/usr/bin/env bash
+# screenshot-organize — rename and sort screenshots using a vision model.
+# Scans a directory for screenshot files, sends each to a local LM Studio
+# vision API, and renames/moves them into category subdirectories.
+#
+# Usage:
+#   screenshot-organize              Organize all screenshots
+#   screenshot-organize --dry-run    Show what would happen
+#   screenshot-organize --dir DIR    Use a different screenshots directory
+#   screenshot-organize --model M    Use a specific vision model
+#   screenshot-organize --api URL    Use a different API endpoint
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Color / formatting (terminal-aware, matching dotfiles-doctor)
+# ---------------------------------------------------------------------------
+if [ -t 1 ]; then
+    GREEN=$'\033[32m'  RED=$'\033[31m'  YELLOW=$'\033[33m'
+    DIM=$'\033[2m'     BOLD=$'\033[1m'  RESET=$'\033[0m'
+else
+    GREEN=""  RED=""  YELLOW=""  DIM=""  BOLD=""  RESET=""
+fi
+
+# ---------------------------------------------------------------------------
+# Config defaults
+# ---------------------------------------------------------------------------
+SCREENSHOTS_DIR="$HOME/Screenshots"
+API_BASE_URL="https://ai-spark.peacock-bramble.ts.net"
+MODEL_NAME=""
+DRY_RUN=false
+LIMIT=0
+
+VALID_CATEGORIES=(code terminal browser chat settings desktop documentation design video email social tools other)
+
+# ---------------------------------------------------------------------------
+# Usage & argument parsing
+# ---------------------------------------------------------------------------
+usage() {
+    echo "Usage: screenshot-organize [OPTIONS]"
+    echo "  (no args)       Organize all screenshots in ~/Screenshots"
+    echo "  --dir DIR       Screenshots directory (default: ~/Screenshots)"
+    echo "  --api URL       LM Studio endpoint (default: $API_BASE_URL)"
+    echo "  --model MODEL   Vision model name (default: auto-detect)"
+    echo "  --limit N       Only process the first N files"
+    echo "  --dry-run       Show renames without moving anything"
+    echo "  --help          Show this help"
+    exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h) usage ;;
+        --dir) SCREENSHOTS_DIR="$2"; shift 2 ;;
+        --api) API_BASE_URL="$2"; shift 2 ;;
+        --model) MODEL_NAME="$2"; shift 2 ;;
+        --limit) LIMIT="$2"; shift 2 ;;
+        --dry-run) DRY_RUN=true; shift ;;
+        *) echo "Unknown option: $1" >&2; usage ;;
+    esac
+done
+
+# Strip trailing slash from API URL
+API_BASE_URL="${API_BASE_URL%/}"
+
+# ---------------------------------------------------------------------------
+# Dependency checks
+# ---------------------------------------------------------------------------
+for cmd in curl jq base64; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "${RED}error:${RESET} $cmd is required but not installed" >&2
+        exit 1
+    fi
+done
+
+if [[ ! -d "$SCREENSHOTS_DIR" ]]; then
+    echo "${RED}error:${RESET} directory not found: $SCREENSHOTS_DIR" >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Auto-detect model if not specified
+# ---------------------------------------------------------------------------
+if [[ -z "$MODEL_NAME" ]]; then
+    MODEL_NAME=$(curl -sf "${API_BASE_URL}/v1/models" 2>/dev/null \
+        | jq -r '.data[0].id // empty' 2>/dev/null) || true
+    if [[ -z "$MODEL_NAME" ]]; then
+        echo "${RED}error:${RESET} could not auto-detect model from ${API_BASE_URL}/v1/models" >&2
+        echo "  Try specifying one with --model <name>" >&2
+        exit 1
+    fi
+    echo "Using model: ${BOLD}${MODEL_NAME}${RESET}"
+fi
+
+# ---------------------------------------------------------------------------
+# Functions
+# ---------------------------------------------------------------------------
+
+# Extract date+time from screenshot filename. Returns YYYY-MM-DD_HH.MM.SS or empty string.
+extract_datetime() {
+    local filename="$1"
+    # CleanShot 2026-01-08 at 22.16.34@2x.png
+    if [[ "$filename" =~ CleanShot\ ([0-9]{4}-[0-9]{2}-[0-9]{2})\ at\ ([0-9]{2}\.[0-9]{2}\.[0-9]{2}) ]]; then
+        echo "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}"
+    # Screenshot 2026-01-09 at 11.38.49 AM.png
+    elif [[ "$filename" =~ Screenshot\ ([0-9]{4}-[0-9]{2}-[0-9]{2})\ at\ ([0-9]{1,2}\.[0-9]{2}\.[0-9]{2})(\ (AM|PM))? ]]; then
+        local date="${BASH_REMATCH[1]}"
+        local time="${BASH_REMATCH[2]}"
+        local ampm="${BASH_REMATCH[4]}"
+        # Convert 12h to 24h if AM/PM present
+        if [[ -n "$ampm" ]]; then
+            local hour minute second
+            IFS='.' read -r hour minute second <<< "$time"
+            hour=$((10#$hour))
+            if [[ "$ampm" == "PM" && "$hour" -ne 12 ]]; then
+                hour=$((hour + 12))
+            elif [[ "$ampm" == "AM" && "$hour" -eq 12 ]]; then
+                hour=0
+            fi
+            time=$(printf "%02d.%s.%s" "$hour" "$minute" "$second")
+        fi
+        echo "${date}_${time}"
+    fi
+}
+
+# Max image dimension (pixels) to send to the API. Larger images are downscaled in-memory.
+MAX_IMAGE_DIM=1920
+# Size threshold (bytes) above which images are downscaled before encoding.
+MAX_IMAGE_BYTES=$((512 * 1024))
+# Curl timeout for the vision API call (seconds).
+API_TIMEOUT=120
+
+# Downscale an image if needed and base64-encode it. Writes base64 to stdout.
+# Uses magick if available, otherwise sends the original.
+encode_image() {
+    local image_path="$1"
+    local file_size
+    file_size=$(stat -c%s "$image_path" 2>/dev/null || stat -f%z "$image_path" 2>/dev/null)
+
+    if [[ "$file_size" -gt "$MAX_IMAGE_BYTES" ]] && command -v magick &>/dev/null; then
+        magick "$image_path" -resize "${MAX_IMAGE_DIM}x${MAX_IMAGE_DIM}>" -quality 85 png:- \
+            | base64 -w0 2>/dev/null || base64 2>/dev/null
+    else
+        base64 -w0 "$image_path" 2>/dev/null || base64 -i "$image_path" 2>/dev/null
+    fi
+}
+
+# Call the vision API with a base64-encoded image. Prints raw JSON response content.
+call_vision_api() {
+    local image_path="$1"
+    local ext="${image_path##*.}"
+    local mime="image/png"
+    case "${ext,,}" in
+        jpg|jpeg) mime="image/jpeg" ;;
+        png) mime="image/png" ;;
+    esac
+
+    # Encode (downscaling large images in-memory), write payload to temp file
+    # to avoid shell argument-list-too-long on both jq and curl
+    local payload_file
+    payload_file=$(mktemp)
+    trap "rm -f '$payload_file'" RETURN
+
+    encode_image "$image_path" | jq -Rs \
+        --arg model "$MODEL_NAME" \
+        --arg mime "$mime" \
+        '{
+            model: $model,
+            messages: [
+                {
+                    role: "system",
+                    content: "You are a screenshot organizer. Analyze the image and return ONLY valid JSON (no markdown fences) with two fields: \"description\" (3-6 words, lowercase, hyphens between words, filename-safe) and \"category\" (one of: code, terminal, browser, chat, settings, desktop, documentation, design, video, email, social, tools, other). Be concise and accurate."
+                },
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "image_url",
+                            image_url: { url: ("data:" + $mime + ";base64," + .) }
+                        },
+                        {
+                            type: "text",
+                            text: "What is this screenshot? Return JSON only."
+                        }
+                    ]
+                }
+            ],
+            max_tokens: 100,
+            temperature: 0.1
+        }' > "$payload_file"
+
+    local response
+    response=$(curl -sf --max-time "$API_TIMEOUT" "${API_BASE_URL}/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -d @"$payload_file" 2>/dev/null) || return 1
+
+    local content
+    content=$(echo "$response" | jq -r '.choices[0].message.content // empty') || return 1
+    [[ -n "$content" ]] || return 1
+    echo "$content"
+}
+
+# Parse API response content into description and category.
+# Strips markdown code fences if present. Sets PARSED_DESC and PARSED_CAT.
+parse_response() {
+    local content="$1"
+    PARSED_DESC=""
+    PARSED_CAT=""
+
+    # Strip markdown code fences
+    content=$(echo "$content" | sed 's/^```[a-z]*//; s/^```//; s/```$//' | tr -d '\n')
+
+    local desc cat
+    desc=$(echo "$content" | jq -r '.description // empty' 2>/dev/null) || return 1
+    cat=$(echo "$content" | jq -r '.category // empty' 2>/dev/null) || return 1
+
+    [[ -n "$desc" && -n "$cat" ]] || return 1
+
+    PARSED_DESC="$desc"
+    PARSED_CAT="$cat"
+}
+
+# Sanitize a string for use as a filename: lowercase, hyphens, max 50 chars.
+sanitize_filename() {
+    local name="$1"
+    name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+    name=$(echo "$name" | tr -cs 'a-z0-9-' '-')
+    name=$(echo "$name" | sed 's/^-//; s/-$//')
+    name="${name:0:50}"
+    echo "$name"
+}
+
+# Validate category against allowed list. Falls back to "other".
+validate_category() {
+    local cat="$1"
+    cat=$(echo "$cat" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z')
+    for valid in "${VALID_CATEGORIES[@]}"; do
+        if [[ "$cat" == "$valid" ]]; then
+            echo "$cat"
+            return
+        fi
+    done
+    echo "other"
+}
+
+# Resolve filename collisions by appending -2, -3, etc.
+resolve_collision() {
+    local target="$1"
+    if [[ ! -e "$target" ]]; then
+        echo "$target"
+        return
+    fi
+    local dir base ext counter
+    dir=$(dirname "$target")
+    base="${target%.*}"
+    ext="${target##*.}"
+    counter=2
+    while [[ -e "${base}-${counter}.${ext}" ]]; do
+        counter=$((counter + 1))
+    done
+    echo "${base}-${counter}.${ext}"
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+# Collect screenshot files (top-level only, png/jpg/jpeg)
+mapfile -t files < <(find "$SCREENSHOTS_DIR" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) | sort)
+
+if [[ ${#files[@]} -eq 0 ]]; then
+    echo "No screenshot files found in $SCREENSHOTS_DIR"
+    exit 0
+fi
+
+# Filter to only screenshot-patterned filenames
+screenshot_files=()
+for f in "${files[@]}"; do
+    basename=$(basename "$f")
+    if [[ "$basename" == CleanShot\ * || "$basename" == Screenshot\ * ]]; then
+        screenshot_files+=("$f")
+    fi
+done
+
+if [[ ${#screenshot_files[@]} -eq 0 ]]; then
+    echo "No files matching screenshot patterns found in $SCREENSHOTS_DIR"
+    exit 0
+fi
+
+# Apply --limit
+if [[ "$LIMIT" -gt 0 && ${#screenshot_files[@]} -gt "$LIMIT" ]]; then
+    screenshot_files=("${screenshot_files[@]:0:$LIMIT}")
+fi
+
+total=${#screenshot_files[@]}
+organized=0
+skipped=0
+failed=0
+declare -A category_counts
+
+if [[ "$DRY_RUN" == true ]]; then
+    echo "${YELLOW}Dry run${RESET} — no files will be moved."
+fi
+echo "Scanning ${BOLD}${total}${RESET} screenshots..."
+echo
+
+for i in "${!screenshot_files[@]}"; do
+    filepath="${screenshot_files[$i]}"
+    filename=$(basename "$filepath")
+    ext="${filename##*.}"
+    ext="${ext,,}"
+    idx=$((i + 1))
+
+    printf "  ${DIM}[%d/%d]${RESET} %s\n" "$idx" "$total" "$filename"
+
+    # Extract date+time
+    date=$(extract_datetime "$filename")
+    if [[ -z "$date" ]]; then
+        printf "         ${YELLOW}skipped${RESET} — could not extract date/time\n"
+        skipped=$((skipped + 1))
+        continue
+    fi
+
+    # Call vision API
+    response=$(call_vision_api "$filepath") || response=""
+    if [[ -z "$response" ]]; then
+        printf "         ${RED}failed${RESET} — API request failed\n"
+        failed=$((failed + 1))
+        continue
+    fi
+
+    # Parse response
+    if ! parse_response "$response"; then
+        printf "         ${RED}failed${RESET} — could not parse API response\n"
+        printf "         ${DIM}%s${RESET}\n" "$response"
+        failed=$((failed + 1))
+        continue
+    fi
+
+    category=$(validate_category "$PARSED_CAT")
+    description=$(sanitize_filename "$PARSED_DESC")
+
+    if [[ -z "$description" ]]; then
+        printf "         ${RED}failed${RESET} — empty description from API\n"
+        failed=$((failed + 1))
+        continue
+    fi
+
+    # Build target path
+    target_dir="${SCREENSHOTS_DIR}/${category}"
+    target_name="${date}_${description}.${ext}"
+    target_path=$(resolve_collision "${target_dir}/${target_name}")
+    relative_target="${category}/$(basename "$target_path")"
+
+    printf "         → ${GREEN}%s${RESET}\n" "$relative_target"
+
+    if [[ "$DRY_RUN" != true ]]; then
+        mkdir -p "$target_dir"
+        mv "$filepath" "$target_path"
+    fi
+
+    organized=$((organized + 1))
+    category_counts[$category]=$(( ${category_counts[$category]:-0} + 1 ))
+done
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+# ${#assoc_array[@]} is unbound in bash strict mode when empty
+num_categories=0
+if [[ "$organized" -gt 0 ]]; then
+    num_categories=${#category_counts[@]}
+fi
+
+echo
+if [[ "$DRY_RUN" == true ]]; then
+    echo "${BOLD}Dry run complete.${RESET} Would organize ${organized} files into ${num_categories} categories (${skipped} skipped, ${failed} failed)."
+else
+    echo "${BOLD}Done.${RESET} Organized ${organized} files into ${num_categories} categories (${skipped} skipped, ${failed} failed)."
+fi
+
+if [[ "$num_categories" -gt 0 ]]; then
+    echo
+    echo "Categories:"
+    # Sort categories by count descending
+    for cat in $(for k in "${!category_counts[@]}"; do echo "$k ${category_counts[$k]}"; done | sort -k2 -rn | awk '{print $1}'); do
+        printf "  %-20s %d\n" "${cat}:" "${category_counts[$cat]}"
+    done
+fi
