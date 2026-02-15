@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# brew-stale — find Brewfile packages you haven't used recently.
+# Cross-references installed brew formulae with atuin shell history
+# to surface packages that may be candidates for removal.
+#
+# Usage:
+#   brew-stale              Show all packages sorted by last use
+#   brew-stale --days 30    Only show packages not used in 30+ days
+#   brew-stale --never      Only show packages never found in history
+
+set -euo pipefail
+
+DAYS=""
+NEVER_ONLY=false
+BREWFILE="${BREWFILE:-$HOME/.config/Brewfile}"
+
+usage() {
+    echo "Usage: brew-stale [--days N] [--never]"
+    echo "  (no args)    Show all packages sorted by staleness"
+    echo "  --days N     Only show packages not used in N+ days"
+    echo "  --never      Only show packages never found in history"
+    echo "  --brewfile F Use a specific Brewfile (default: ~/.config/Brewfile)"
+    exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h) usage ;;
+        --days) DAYS="$2"; shift 2 ;;
+        --never) NEVER_ONLY=true; shift ;;
+        --brewfile) BREWFILE="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; usage ;;
+    esac
+done
+
+if ! command -v atuin &>/dev/null; then
+    echo "error: atuin is required but not installed" >&2
+    exit 1
+fi
+
+# Get formulae from Brewfile
+get_brewfile_formulae() {
+    if [[ -f "$BREWFILE" ]]; then
+        grep -E '^\s*brew\s+"' "$BREWFILE" | sed -E 's/.*brew *"([^"]*)".*/\1/' | sort -u
+    else
+        echo "warning: Brewfile not found at $BREWFILE, using installed leaves" >&2
+        brew leaves --installed-on-request | sort
+    fi
+}
+
+# Get binary names for a formula
+get_binaries() {
+    local formula="$1"
+    # Get the short name (strip tap prefix)
+    local short_name="${formula##*/}"
+
+    # List installed files and extract binary names from bin/ and sbin/
+    local bins
+    bins=$(brew list "$short_name" 2>/dev/null | grep -E '/s?bin/[^/]+$' | xargs -I{} basename {} 2>/dev/null | sort -u)
+
+    if [[ -z "$bins" ]]; then
+        # Fallback: just try the formula short name itself
+        echo "$short_name"
+    else
+        echo "$bins"
+    fi
+}
+
+# Search atuin for the last time a binary was used
+last_used() {
+    local binary="$1"
+    # Search for the binary as the first word in a command
+    local result
+    result=$(atuin search --format "{time}" --limit 1 --search-mode prefix -- "$binary" 2>/dev/null | head -1)
+
+    if [[ -n "$result" ]]; then
+        echo "$result"
+    else
+        echo "never"
+    fi
+}
+
+# Convert timestamp to days ago
+days_ago() {
+    local timestamp="$1"
+    if [[ "$timestamp" == "never" ]]; then
+        echo "999999"
+        return
+    fi
+    local then_epoch now_epoch
+    then_epoch=$(date -d "$timestamp" +%s 2>/dev/null) || then_epoch=$(date -jf "%Y-%m-%d %H:%M:%S" "$timestamp" +%s 2>/dev/null) || echo "999999"
+    now_epoch=$(date +%s)
+    echo $(( (now_epoch - then_epoch) / 86400 ))
+}
+
+# Collect results
+declare -a results=()
+formulae=$(get_brewfile_formulae)
+total=$(echo "$formulae" | wc -l | tr -d ' ')
+current=0
+
+echo "Scanning $total formulae..." >&2
+
+while IFS= read -r formula; do
+    current=$((current + 1))
+    printf "\r  [%d/%d] %s" "$current" "$total" "$formula" >&2
+
+    # Get all binaries for this formula
+    bins=$(get_binaries "$formula")
+
+    # Find the most recent use across all binaries
+    best_time="never"
+    best_binary=""
+    best_days=999999
+
+    while IFS= read -r bin; do
+        [[ -z "$bin" ]] && continue
+        timestamp=$(last_used "$bin")
+        if [[ "$timestamp" != "never" ]]; then
+            d=$(days_ago "$timestamp")
+            if [[ "$d" -lt "$best_days" ]]; then
+                best_days=$d
+                best_time=$timestamp
+                best_binary=$bin
+            fi
+        fi
+    done <<< "$bins"
+
+    if [[ "$best_time" == "never" ]]; then
+        results+=("999999|$formula|never|—")
+    else
+        results+=("$best_days|$formula|$best_time|$best_binary")
+    fi
+done <<< "$formulae"
+
+printf "\r%-60s\n" "" >&2
+
+# Sort results by days ago (most stale first)
+IFS=$'\n' sorted=($(printf '%s\n' "${results[@]}" | sort -t'|' -k1 -rn))
+unset IFS
+
+# Display
+printf "%-35s %-25s %s\n" "FORMULA" "LAST USED" "VIA"
+printf "%-35s %-25s %s\n" "-------" "---------" "---"
+
+for entry in "${sorted[@]}"; do
+    IFS='|' read -r d formula timestamp binary <<< "$entry"
+
+    # Apply filters
+    if [[ "$NEVER_ONLY" == true && "$timestamp" != "never" ]]; then
+        continue
+    fi
+    if [[ -n "$DAYS" && "$d" -lt "$DAYS" && "$timestamp" != "never" ]]; then
+        continue
+    fi
+
+    if [[ "$timestamp" == "never" ]]; then
+        printf "%-35s %-25s %s\n" "$formula" "never" "$binary"
+    else
+        if [[ "$d" -eq 0 ]]; then
+            age="today"
+        elif [[ "$d" -eq 1 ]]; then
+            age="yesterday"
+        else
+            age="${d} days ago"
+        fi
+        printf "%-35s %-25s %s\n" "$formula" "$age" "$binary"
+    fi
+done
