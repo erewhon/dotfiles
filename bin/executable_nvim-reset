@@ -5,9 +5,17 @@ set -euo pipefail
 echo "Removing Neovim cache and state..."
 rm -rf ~/.cache/nvim ~/.local/state/nvim ~/.config/nvim/lazy-lock.json
 
+# Remove legacy plugins.lua (pre-LazyVim config that conflicts with blink.cmp)
+legacy="$HOME/.config/nvim/lua/plugins.lua"
+if [[ -f "$legacy" ]]; then
+    echo "Removing legacy plugin spec: $legacy"
+    rm -f "$legacy"
+fi
+
 # Remove known orphaned plugins (leftover from LazyVim transitions)
 orphans=(
     cmp-nvim-lsp    # nvim-cmp replaced by blink.cmp
+    nvim-cmp        # replaced by blink.cmp
 )
 
 for plugin in "${orphans[@]}"; do

@@ -88,12 +88,23 @@ return {
 		},
 	},
 
+	-- Visualize undo history as a tree, browse and restore any state
+	{
+		"mbbill/undotree",
+		keys = {
+			{ "<leader>U", "<cmd>UndotreeToggle<CR>", desc = "Undotree" },
+		},
+	},
+
 	-- Scrollbar with diagnostic/git/search markers
 	{
 		"lewis6991/satellite.nvim",
 		event = "BufReadPost",
 		opts = {},
 	},
+
+	-- NOTE: Olical/nfnl (Fennel for Neovim) was in the old plugins.lua.
+	-- Re-add here if you want to write nvim config in Fennel again.
 
 	-- Disable render-markdown by default (use :RenderMarkdown toggle to enable)
 	{
