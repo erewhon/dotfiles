@@ -1,0 +1,11 @@
+#!/bin/sh
+# {{ include "dot_config/packages/sysctl.conf" | sha256sum }}
+# Apply custom sysctl settings when sysctl.conf changes.
+
+set -e
+
+echo "[05-sysctl] installing sysctl overrides..."
+sudo cp "$HOME/.config/packages/sysctl.conf" /etc/sysctl.d/99-chezmoi.conf
+sudo sysctl --load /etc/sysctl.d/99-chezmoi.conf
+
+echo "[05-sysctl] done"
