@@ -20,6 +20,12 @@ README.md
 .config/wezterm
 {{ end }}
 
+# Skip personal-only configs on non-personal hosts
+{{ if not (get $host "is_personal") }}
+.config/opencode
+.local/share/crush
+{{ end }}
+
 # Skip macOS-only configs on Linux
 {{ if eq .chezmoi.os "linux" }}
 .config/iterm
