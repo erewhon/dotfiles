@@ -1,11 +1,17 @@
 #!/bin/sh
 # {{ include "dot_config/packages/sysctl.conf" | sha256sum }}
 # Apply custom sysctl settings when sysctl.conf changes.
+# Non-fatal: won't break chezmoi apply if sudo is unavailable or on macOS.
 
-set -e
-
-echo "[05-sysctl] installing sysctl overrides..."
-sudo cp "$HOME/.config/packages/sysctl.conf" /etc/sysctl.d/99-chezmoi.conf
-sudo sysctl --load /etc/sysctl.d/99-chezmoi.conf
-
-echo "[05-sysctl] done"
+{{ if eq .chezmoi.os "linux" -}}
+if sudo -n true 2>/dev/null; then
+    echo "[05-sysctl] installing sysctl overrides..."
+    sudo cp "$HOME/.config/packages/sysctl.conf" /etc/sysctl.d/99-chezmoi.conf
+    sudo sysctl --load /etc/sysctl.d/99-chezmoi.conf
+    echo "[05-sysctl] done"
+else
+    echo "[05-sysctl] skipping: sudo requires a password (run manually with sudo)"
+fi
+{{ else -}}
+echo "[05-sysctl] skipping: not Linux"
+{{ end -}}
