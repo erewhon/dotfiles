@@ -2,7 +2,7 @@
 # {{ include "dot_config/packages/apt-packages.txt" | sha256sum }}
 # Install Debian/Ubuntu packages when apt-packages.txt changes.
 
-{{ $host := dict "is_remote" true "has_gui" false "has_brew" false "has_apt" false "is_personal" false -}}
+{{ $host := .host_defaults -}}
 {{ if hasKey .hosts .chezmoi.hostname -}}
 {{   $host = index .hosts .chezmoi.hostname -}}
 {{ end -}}
