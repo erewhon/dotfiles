@@ -1,0 +1,321 @@
+#!/usr/bin/env bash
+# code-stats — count lines of code across one or more repos.
+# Wrapper around tokei with multi-repo aggregation and clean output.
+#
+# Usage:
+#   code-stats                       Count lines in current directory
+#   code-stats ~/proj/foo            Count lines in one repo
+#   code-stats ~/proj/foo ~/proj/bar Count lines across multiple repos
+#   code-stats --json                Output as JSON
+#   code-stats --sort code           Sort by column (code|files|blanks|comments)
+#   code-stats --top 5               Show only top N languages
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Color / formatting
+# ---------------------------------------------------------------------------
+if [ -t 1 ]; then
+    BOLD=$'\033[1m'    DIM=$'\033[2m'    RESET=$'\033[0m'
+    CYAN=$'\033[36m'   GREEN=$'\033[32m'
+else
+    BOLD=""  DIM=""  RESET=""  CYAN=""  GREEN=""
+fi
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+JSON_MODE=false
+SORT_BY="code"
+TOP_N=0
+DIRS=()
+
+usage() {
+    cat <<EOF
+Usage: code-stats [OPTIONS] [DIR...]
+
+Count lines of code using tokei, with multi-repo aggregation.
+
+Arguments:
+  DIR...               Directories to scan (default: current directory)
+
+Options:
+  --json               Output as JSON
+  --sort COLUMN        Sort by: code, files, blanks, comments (default: code)
+  --top N              Show only top N languages (default: all)
+  -h, --help           Show this help
+EOF
+    exit 0
+}
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h) usage ;;
+        --json)    JSON_MODE=true; shift ;;
+        --sort)    SORT_BY="$2"; shift 2 ;;
+        --top)     TOP_N="$2"; shift 2 ;;
+        -*)        echo "Unknown option: $1" >&2; usage ;;
+        *)         DIRS+=("$1"); shift ;;
+    esac
+done
+
+# Default to current directory
+if [[ ${#DIRS[@]} -eq 0 ]]; then
+    DIRS=(".")
+fi
+
+# ---------------------------------------------------------------------------
+# Dependency check
+# ---------------------------------------------------------------------------
+for cmd in tokei jq; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "error: $cmd is required but not installed" >&2
+        exit 1
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# Functions
+# ---------------------------------------------------------------------------
+
+# Run tokei on a single directory, return JSON
+scan_repo() {
+    local dir="$1"
+    tokei --output json "$dir" 2>/dev/null
+}
+
+# Format a number with comma thousands separators
+fmt_num() {
+    printf "%'d" "$1"
+}
+
+# Shorten a path for display (use ~ for HOME)
+short_path() {
+    local dir="$1"
+    dir=$(cd "$dir" && pwd)
+    echo "${dir/#$HOME/~}"
+}
+
+# Build the jq sort expression based on SORT_BY
+jq_sort_key() {
+    case "$SORT_BY" in
+        code)     echo ".code" ;;
+        files)    echo ".files" ;;
+        blanks)   echo ".blanks" ;;
+        comments) echo ".comments" ;;
+        *)        echo "error: invalid sort column '$SORT_BY' (use: code, files, blanks, comments)" >&2; exit 1 ;;
+    esac
+}
+
+# Extract language rows from tokei JSON as tab-separated lines (sorted)
+# Output: language\tfiles\tcode\tcomments\tblanks
+extract_languages() {
+    local json="$1"
+    local sort_key
+    sort_key=$(jq_sort_key)
+
+    jq -r --arg sk "$sort_key" '
+        to_entries
+        | map(select(.key != "Total"))
+        | map({
+            lang: .key,
+            files: (.value.reports | length),
+            code: .value.code,
+            comments: .value.comments,
+            blanks: .value.blanks
+        })
+        | sort_by(-(.[$sk[1:]]))
+        | .[]
+        | [.lang, .files, .code, .comments, .blanks]
+        | @tsv
+    ' <<< "$json"
+}
+
+# Extract totals from tokei JSON
+# Output: files\tcode\tcomments\tblanks
+extract_total() {
+    local json="$1"
+    jq -r '
+        [
+            ([to_entries[] | select(.key != "Total") | .value.reports | length] | add // 0),
+            .Total.code,
+            .Total.comments,
+            .Total.blanks
+        ] | @tsv
+    ' <<< "$json"
+}
+
+# Print a formatted table from tokei JSON
+print_table() {
+    local json="$1"
+    local sort_key
+    sort_key=$(jq_sort_key)
+
+    local lines
+    lines=$(jq -r --arg sk "${SORT_BY}" '
+        to_entries
+        | map(select(.key != "Total"))
+        | map({
+            lang: .key,
+            files: (.value.reports | length),
+            code: .value.code,
+            comments: .value.comments,
+            blanks: .value.blanks
+        })
+        | sort_by(
+            if $sk == "code" then -.code
+            elif $sk == "files" then -.files
+            elif $sk == "blanks" then -.blanks
+            elif $sk == "comments" then -.comments
+            else -.code end
+        )
+        | .[]
+        | [.lang, .files, .code, .comments, .blanks]
+        | @tsv
+    ' <<< "$json")
+
+    # Apply --top if set
+    if [[ "$TOP_N" -gt 0 ]]; then
+        lines=$(echo "$lines" | head -n "$TOP_N")
+    fi
+
+    local separator="  ${DIM}─────────────────────────────────────────────────────${RESET}"
+
+    printf "  ${BOLD}%-20s %8s %8s %10s %8s${RESET}\n" "Language" "Files" "Code" "Comments" "Blanks"
+    echo "$separator"
+
+    while IFS=$'\t' read -r lang files code comments blanks; do
+        [[ -z "$lang" ]] && continue
+        printf "  ${CYAN}%-20s${RESET} %8s %8s %10s %8s\n" \
+            "$lang" "$(fmt_num "$files")" "$(fmt_num "$code")" "$(fmt_num "$comments")" "$(fmt_num "$blanks")"
+    done <<< "$lines"
+
+    echo "$separator"
+
+    # Totals row
+    local total_line
+    total_line=$(extract_total "$json")
+    IFS=$'\t' read -r t_files t_code t_comments t_blanks <<< "$total_line"
+    printf "  ${BOLD}%-20s %8s %8s %10s %8s${RESET}\n" \
+        "Total" "$(fmt_num "$t_files")" "$(fmt_num "$t_code")" "$(fmt_num "$t_comments")" "$(fmt_num "$t_blanks")"
+}
+
+# Print a one-line summary for a repo
+print_summary_line() {
+    local dir="$1" json="$2"
+    local path
+    path=$(short_path "$dir")
+
+    local total_line
+    total_line=$(extract_total "$json")
+    IFS=$'\t' read -r t_files t_code t_comments t_blanks <<< "$total_line"
+
+    local num_langs
+    num_langs=$(jq '[keys[] | select(. != "Total")] | length' <<< "$json")
+
+    printf "%-40s %s code  %s files  %s languages\n" \
+        "${BOLD}${path}${RESET}" \
+        "${GREEN}$(fmt_num "$t_code")${RESET}" \
+        "$(fmt_num "$t_files")" \
+        "$(fmt_num "$num_langs")"
+}
+
+# Merge multiple tokei JSON outputs into one
+merge_results() {
+    local merged="$1"
+    shift
+    for extra in "$@"; do
+        merged=$(jq -s '
+            .[0] as $a | .[1] as $b |
+            ($a | keys) + ($b | keys) | unique | map(. as $k |
+                if $k == "Total" then
+                    {($k): {
+                        code: (($a[$k].code // 0) + ($b[$k].code // 0)),
+                        comments: (($a[$k].comments // 0) + ($b[$k].comments // 0)),
+                        blanks: (($a[$k].blanks // 0) + ($b[$k].blanks // 0)),
+                        reports: (($a[$k].reports // []) + ($b[$k].reports // []))
+                    }}
+                else
+                    {($k): {
+                        code: (($a[$k].code // 0) + ($b[$k].code // 0)),
+                        comments: (($a[$k].comments // 0) + ($b[$k].comments // 0)),
+                        blanks: (($a[$k].blanks // 0) + ($b[$k].blanks // 0)),
+                        reports: (($a[$k].reports // []) + ($b[$k].reports // []))
+                    }}
+                end
+            ) | add
+        ' <<< "$merged"$'\n'"$extra")
+    done
+    echo "$merged"
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+# Validate directories
+for dir in "${DIRS[@]}"; do
+    if [[ ! -d "$dir" ]]; then
+        echo "error: not a directory: $dir" >&2
+        exit 1
+    fi
+done
+
+# Scan all repos
+declare -a RESULTS=()
+for dir in "${DIRS[@]}"; do
+    result=$(scan_repo "$dir")
+    if [[ -z "$result" || "$result" == "{}" ]]; then
+        echo "warning: no code found in $(short_path "$dir")" >&2
+        continue
+    fi
+    RESULTS+=("$result")
+done
+
+if [[ ${#RESULTS[@]} -eq 0 ]]; then
+    echo "No code found in any of the specified directories." >&2
+    exit 1
+fi
+
+# JSON mode: output combined JSON and exit
+if [[ "$JSON_MODE" == true ]]; then
+    if [[ ${#RESULTS[@]} -eq 1 ]]; then
+        echo "${RESULTS[0]}" | jq .
+    else
+        merged=$(merge_results "${RESULTS[@]}")
+        echo "$merged" | jq .
+    fi
+    exit 0
+fi
+
+# Display
+if [[ ${#DIRS[@]} -eq 1 ]]; then
+    # Single repo: show full table
+    echo
+    printf "%s\n" "${BOLD}$(short_path "${DIRS[0]}")${RESET}"
+    echo
+    print_table "${RESULTS[0]}"
+    echo
+else
+    # Multiple repos: per-repo summaries, then combined table
+    echo
+    idx=0
+    for dir in "${DIRS[@]}"; do
+        if [[ $idx -lt ${#RESULTS[@]} ]]; then
+            print_summary_line "$dir" "${RESULTS[$idx]}"
+            idx=$((idx + 1))
+        fi
+    done
+
+    printf "${DIM}────────────────────────────────────────────────────────────────────${RESET}\n"
+    echo
+    printf "${BOLD}Combined: %d repos${RESET}\n" "${#RESULTS[@]}"
+    echo
+
+    merged=$(merge_results "${RESULTS[@]}")
+    print_table "$merged"
+    echo
+fi
