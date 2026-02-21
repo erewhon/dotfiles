@@ -28,6 +28,7 @@ fi
 JSON_MODE=false
 SORT_BY="code"
 TOP_N=0
+EXCLUDE=""
 DIRS=()
 
 usage() {
@@ -41,6 +42,7 @@ Arguments:
 
 Options:
   --json               Output as JSON
+  --exclude LANGS      Comma-separated languages to exclude (e.g. JSON,Markdown)
   --sort COLUMN        Sort by: code, files, blanks, comments (default: code)
   --top N              Show only top N languages (default: all)
   -h, --help           Show this help
@@ -55,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --help|-h) usage ;;
         --json)    JSON_MODE=true; shift ;;
+        --exclude) EXCLUDE="$2"; shift 2 ;;
         --sort)    SORT_BY="$2"; shift 2 ;;
         --top)     TOP_N="$2"; shift 2 ;;
         -*)        echo "Unknown option: $1" >&2; usage ;;
@@ -85,6 +88,30 @@ done
 scan_repo() {
     local dir="$1"
     tokei --output json "$dir" 2>/dev/null
+}
+
+# Remove excluded languages from tokei JSON and recalculate Total
+filter_excluded() {
+    local json="$1"
+    [[ -z "$EXCLUDE" ]] && { echo "$json"; return; }
+
+    # Build jq array from comma-separated list (case-insensitive matching)
+    local jq_excludes
+    jq_excludes=$(echo "$EXCLUDE" | jq -R 'split(",") | map(gsub("^ +| +$"; "") | ascii_downcase)')
+
+    jq --argjson ex "$jq_excludes" '
+        with_entries(select((.key | ascii_downcase) as $k | ($ex | index($k)) | not))
+        | . as $filtered
+        | ($filtered | to_entries | map(select(.key != "Total"))) as $langs
+        | $filtered + {
+            "Total": {
+                "code": ([$langs[].value.code] | add // 0),
+                "comments": ([$langs[].value.comments] | add // 0),
+                "blanks": ([$langs[].value.blanks] | add // 0),
+                "reports": [$langs[].value.reports] | add // []
+            }
+        }
+    ' <<< "$json"
 }
 
 # Format a number with comma thousands separators
@@ -272,6 +299,7 @@ for dir in "${DIRS[@]}"; do
         echo "warning: no code found in $(short_path "$dir")" >&2
         continue
     fi
+    result=$(filter_excluded "$result")
     RESULTS+=("$result")
 done
 
