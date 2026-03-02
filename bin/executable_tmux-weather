@@ -46,12 +46,12 @@ get_location() {
         fi
     fi
 
-    # Auto-detect and cache
+    # Auto-detect and cache (ip-api.com: free, no key, 45 req/min)
     local geo
-    geo=$(curl -s --max-time 3 "https://ipapi.co/json/" 2>/dev/null) || return 1
+    geo=$(curl -s --max-time 3 "http://ip-api.com/json/?fields=lat,lon" 2>/dev/null) || return 1
     local lat lon
-    lat=$(echo "$geo" | jq -r '.latitude // empty' 2>/dev/null) || return 1
-    lon=$(echo "$geo" | jq -r '.longitude // empty' 2>/dev/null) || return 1
+    lat=$(echo "$geo" | jq -r '.lat // empty' 2>/dev/null) || return 1
+    lon=$(echo "$geo" | jq -r '.lon // empty' 2>/dev/null) || return 1
 
     if [[ -n "$lat" && -n "$lon" ]]; then
         echo "LAT=$lat" > "$LOCATION_FILE"
