@@ -84,10 +84,32 @@ done
 # Functions
 # ---------------------------------------------------------------------------
 
+# Directories to always exclude (build artifacts, dependencies, generated code).
+# tokei respects .gitignore when it finds a .git dir, but jj repos store git
+# under .jj/repo/store/git so tokei misses it. These cover the common cases.
+EXCLUDE_DIRS=(
+    node_modules
+    dist
+    build
+    target
+    vendor
+    __pycache__
+    .next
+    .nuxt
+    .output
+    .cache
+    coverage
+    out
+)
+
 # Run tokei on a single directory, return JSON
 scan_repo() {
     local dir="$1"
-    tokei --output json "$dir" 2>/dev/null
+    local -a exclude_args=()
+    for d in "${EXCLUDE_DIRS[@]}"; do
+        exclude_args+=(--exclude "$d")
+    done
+    tokei --output json "${exclude_args[@]}" "$dir" 2>/dev/null
 }
 
 # Remove excluded languages from tokei JSON and recalculate Total
