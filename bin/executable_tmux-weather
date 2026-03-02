@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# tmux-weather — lightweight weather for tmux status bar using Open-Meteo.
+# Caches results to avoid hammering the API on every tmux status refresh.
+#
+# Usage: tmux-weather
+#
+# Location is auto-detected via IP geolocation on first run, then cached.
+# Override by creating ~/.config/weather-location with: LAT=40.71 LON=-74.01
+
+set -euo pipefail
+
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/tmux-weather"
+CACHE_FILE="$CACHE_DIR/weather"
+LOCATION_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/weather-location"
+CACHE_MAX_AGE=$((15 * 60))  # 15 minutes
+
+mkdir -p "$CACHE_DIR"
+
+# WMO weather codes to emoji
+weather_icon() {
+    case "$1" in
+        0)          echo "☀️" ;;   # Clear sky
+        1|2)        echo "🌤" ;;   # Mainly clear, partly cloudy
+        3)          echo "☁️" ;;   # Overcast
+        45|48)      echo "🌫" ;;   # Fog
+        51|53|55)   echo "🌦" ;;   # Drizzle
+        61|63|65)   echo "🌧" ;;   # Rain
+        66|67)      echo "🌧" ;;   # Freezing rain
+        71|73|75)   echo "🌨" ;;   # Snowfall
+        77)         echo "🌨" ;;   # Snow grains
+        80|81|82)   echo "🌧" ;;   # Rain showers
+        85|86)      echo "🌨" ;;   # Snow showers
+        95)         echo "⛈" ;;    # Thunderstorm
+        96|99)      echo "⛈" ;;    # Thunderstorm with hail
+        *)          echo "🌡" ;;
+    esac
+}
+
+# Get lat/lon — from config file, or auto-detect via IP
+get_location() {
+    if [[ -f "$LOCATION_FILE" ]]; then
+        source "$LOCATION_FILE"
+        if [[ -n "${LAT:-}" && -n "${LON:-}" ]]; then
+            echo "$LAT $LON"
+            return
+        fi
+    fi
+
+    # Auto-detect and cache
+    local geo
+    geo=$(curl -s --max-time 3 "https://ipapi.co/json/" 2>/dev/null) || return 1
+    local lat lon
+    lat=$(echo "$geo" | jq -r '.latitude // empty' 2>/dev/null) || return 1
+    lon=$(echo "$geo" | jq -r '.longitude // empty' 2>/dev/null) || return 1
+
+    if [[ -n "$lat" && -n "$lon" ]]; then
+        echo "LAT=$lat" > "$LOCATION_FILE"
+        echo "LON=$lon" >> "$LOCATION_FILE"
+        echo "$lat $lon"
+    fi
+}
+
+# Fetch weather from Open-Meteo
+fetch_weather() {
+    local lat="$1" lon="$2"
+    local response
+    response=$(curl -s --max-time 5 \
+        "https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&temperature_unit=fahrenheit" \
+        2>/dev/null) || return 1
+
+    local temp code icon
+    temp=$(echo "$response" | jq -r '.current.temperature_2m // empty' 2>/dev/null) || return 1
+    code=$(echo "$response" | jq -r '.current.weather_code // empty' 2>/dev/null) || return 1
+
+    [[ -z "$temp" ]] && return 1
+
+    icon=$(weather_icon "$code")
+    # Round to integer
+    temp=$(printf "%.0f" "$temp")
+    echo "${icon} ${temp}°F"
+}
+
+# Main: use cache if fresh, otherwise fetch
+main() {
+    # Check cache
+    if [[ -f "$CACHE_FILE" ]]; then
+        local cache_age
+        local now
+        now=$(date +%s)
+        local file_time
+        file_time=$(stat -c %Y "$CACHE_FILE" 2>/dev/null || stat -f %m "$CACHE_FILE" 2>/dev/null)
+        cache_age=$((now - file_time))
+
+        if [[ $cache_age -lt $CACHE_MAX_AGE ]]; then
+            cat "$CACHE_FILE"
+            return
+        fi
+    fi
+
+    # Get location
+    local location
+    location=$(get_location) || { [[ -f "$CACHE_FILE" ]] && cat "$CACHE_FILE"; return; }
+    local lat lon
+    read -r lat lon <<< "$location"
+
+    # Fetch and cache
+    local result
+    result=$(fetch_weather "$lat" "$lon") || { [[ -f "$CACHE_FILE" ]] && cat "$CACHE_FILE"; return; }
+
+    echo -n "$result" > "$CACHE_FILE"
+    echo -n "$result"
+}
+
+main
