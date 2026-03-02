@@ -46,11 +46,11 @@ if [[ -o login ]]; then
         echo $NOW > $XDG_CACHE_HOME/.last_fastfetch
 
         if command -v fastfetch 2>&1 > /dev/null; then
-            if [[ -z "$TMUX" ]]; then
-                IMAGE_ROOT=$HOME/Documents/Pictures/Backgrounds/Unsplash.fastfetch
-                ls -1 $IMAGE_ROOT/ | \
+            IMAGE_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/fastfetch/backgrounds"
+            if [[ -z "$TMUX" ]] && [[ -d "$IMAGE_ROOT" ]] && [[ -n "$(ls -A "$IMAGE_ROOT" 2>/dev/null)" ]]; then
+                ls -1 "$IMAGE_ROOT/" | \
                        shuf -n 1 | \
-                       xargs -I '{}' fastfetch --raw $IMAGE_ROOT/'{}'
+                       xargs -I '{}' fastfetch --raw "$IMAGE_ROOT/{}"
             else
                 fastfetch
             fi
