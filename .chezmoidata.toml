@@ -33,6 +33,13 @@
   has_apt     = true
   is_personal = true
 
+[hosts.hypatia]
+  is_remote   = false
+  has_gui     = true
+  has_brew    = true
+  has_apt     = true
+  is_personal = true
+
 [hosts.hermes]
   is_remote   = false
   has_gui     = true
