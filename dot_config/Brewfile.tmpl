@@ -3,7 +3,6 @@
 {{ $host := .host_defaults }}{{ if hasKey .hosts .chezmoi.hostname }}{{ $host = index .hosts .chezmoi.hostname }}{{ end -}}
 
 # Taps
-tap "homebrew/bundle"
 tap "adembc/tap"
 tap "charmbracelet/tap"
 tap "derailed/k9s"
