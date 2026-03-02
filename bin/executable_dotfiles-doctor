@@ -155,7 +155,8 @@ check_chezmoi_state() {
         "$HOME/.local/state/oh-my-zsh/custom/plugins/zsh-autosuggestions"
         "$HOME/.local/state/oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
         "$HOME/.local/state/oh-my-zsh/custom/themes/powerlevel10k"
-        "$HOME/.tmux/plugins/tpm"
+        "$HOME/.config/tmux/plugins/tpm"
+        "$HOME/.config/tmux/plugins/catppuccin/tmux"
     )
     local labels=(
         "oh-my-zsh"
@@ -163,6 +164,7 @@ check_chezmoi_state() {
         "zsh-syntax-highlighting plugin"
         "powerlevel10k theme"
         "tmux plugin manager (tpm)"
+        "catppuccin tmux theme"
     )
 
     for i in "${!externals[@]}"; do
