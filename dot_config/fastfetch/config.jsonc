@@ -27,12 +27,6 @@
     "localip",
     "battery",
     "break",
-    {
-      "type": "command",
-      "key": "Weather",
-      "text": "curl -s --max-time 3 'wttr.in/?format=%c+%t+%w'"
-    },
-    "break",
     "colors"
   ]
 }
