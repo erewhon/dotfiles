@@ -41,7 +41,9 @@ brew "direnv"
 brew "fastfetch"
 brew "fish"
 brew "gum"
+{{ if ne .chezmoi.arch "arm64" -}}
 brew "nu"
+{{ end -}}
 brew "onefetch"
 brew "starship"
 brew "zoxide"
@@ -61,7 +63,6 @@ brew "neovim"
 brew "yazi"
 
 # Security & secrets
-brew "1password-cli"
 brew "age"
 brew "nmap"
 
@@ -127,7 +128,6 @@ brew "opencode"
 # Data & cloud
 brew "awscli"
 brew "aws-shell"
-brew "fits"
 brew "internetarchive"
 brew "pipx"
 brew "redis"
