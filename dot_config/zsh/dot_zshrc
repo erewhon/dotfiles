@@ -25,8 +25,11 @@ if [[ "${os_name}" == "Darwin" ]]; then
         TERM="screen-256color"
     fi
 else
-    # For Linux and others, we add /usr/local/bin and /usr/local/sbin unconditionally
-    export PATH="/usr/local/opt/python-3.9.7/bin:/usr/local/bin:/usr/local/sbin${PATH+:$PATH}";
+    # For Linux: add Linuxbrew if present, plus /usr/local/bin
+    if [[ -d /home/linuxbrew/.linuxbrew ]]; then
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+    fi
+    export PATH="/usr/local/bin:/usr/local/sbin${PATH+:$PATH}";
 fi
 
 #
