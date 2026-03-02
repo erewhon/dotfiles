@@ -21,6 +21,11 @@
     url = "https://github.com/romkatv/powerlevel10k/archive/v1.15.0.tar.gz"
     exact = true
     stripComponents = 1
+[".local/share/fastfetch/backgrounds"]
+    type = "archive"
+    url = "https://github.com/erewhon/dotfiles-assets/releases/download/v1/fastfetch-backgrounds.tar.gz"
+    exact = true
+    refreshPeriod = "720h"
 [".config/tmux/plugins/tpm"]
     type = "archive"
     url = "https://github.com/tmux-plugins/tpm/archive/master.tar.gz"

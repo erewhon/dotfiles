@@ -50,7 +50,7 @@ if [[ -o login ]]; then
             if [[ -z "$TMUX" ]] && [[ -d "$IMAGE_ROOT" ]] && [[ -n "$(ls -A "$IMAGE_ROOT" 2>/dev/null)" ]]; then
                 ls -1 "$IMAGE_ROOT/" | \
                        shuf -n 1 | \
-                       xargs -I '{}' fastfetch --raw "$IMAGE_ROOT/{}"
+                       xargs -I '{}' fastfetch --logo "$IMAGE_ROOT/{}"
             else
                 fastfetch
             fi
