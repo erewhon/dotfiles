@@ -52,7 +52,7 @@ resolve_host_profile() {
     if [ -n "$HOST_PROFILE" ]; then return; fi
     command -v chezmoi &>/dev/null || return 0
     # chezmoi execute-template has access to .chezmoidata.toml values
-    local tmpl='{{ $h := .chezmoi.hostname }}{{ $prof := .host_defaults }}{{ if hasKey .hosts $h }}{{ $prof = index .hosts $h }}{{ end }}{ "known": {{ if hasKey .hosts $h }}true{{ else }}false{{ end }}, "is_remote": {{ $prof.is_remote }}, "has_gui": {{ $prof.has_gui }}, "has_brew": {{ $prof.has_brew }}, "has_apt": {{ $prof.has_apt }}, "is_personal": {{ $prof.is_personal }} }'
+    local tmpl='{{ $h := .chezmoi.hostname }}{{ $prof := .host_defaults }}{{ if hasKey .hosts $h }}{{ $prof = index .hosts $h }}{{ end }}{ "known": {{ if hasKey .hosts $h }}true{{ else }}false{{ end }}, "is_remote": {{ $prof.is_remote }}, "has_gui": {{ $prof.has_gui }}, "has_brew": {{ $prof.has_brew }}, "has_apt": {{ $prof.has_apt }}, "has_dnf": {{ $prof.has_dnf }}, "is_personal": {{ $prof.is_personal }} }'
     HOST_PROFILE=$(chezmoi execute-template "$tmpl" 2>/dev/null) || HOST_PROFILE=""
 }
 
@@ -96,7 +96,7 @@ check_host_identity() {
         warn "Host '$hostname' not in .chezmoidata.toml — using defaults"
     fi
 
-    local flags=("is_remote" "has_gui" "has_brew" "has_apt" "is_personal")
+    local flags=("is_remote" "has_gui" "has_brew" "has_apt" "has_dnf" "is_personal")
     local profile_line="  Profile: "
     for flag in "${flags[@]}"; do
         local val
@@ -262,6 +262,30 @@ check_apt_packages() {
 
     if [ "$missing_count" -eq 0 ] && [ "$total" -gt 0 ]; then
         pass "$total/$total apt packages installed"
+    fi
+}
+
+check_dnf_packages() {
+    if ! command -v rpm &>/dev/null; then
+        return
+    fi
+
+    local pkg_file="$HOME/.config/packages/dnf-packages.txt"
+    [ -f "$pkg_file" ] || return 0
+
+    section "Packages: dnf"
+
+    local total=0 missing_count=0
+    while IFS= read -r pkg; do
+        total=$((total + 1))
+        if ! rpm -q "$pkg" &>/dev/null; then
+            fail "dnf package missing: $pkg"
+            missing_count=$((missing_count + 1))
+        fi
+    done < <(read_pkg_list "$pkg_file")
+
+    if [ "$missing_count" -eq 0 ] && [ "$total" -gt 0 ]; then
+        pass "$total/$total dnf packages installed"
     fi
 }
 
@@ -450,6 +474,7 @@ check_core_tools
 check_chezmoi_state
 check_brew_packages
 check_apt_packages
+check_dnf_packages
 check_uv_tools
 check_npm_globals
 check_cargo_tools

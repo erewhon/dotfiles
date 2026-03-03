@@ -43,8 +43,13 @@ if [[ "$(uname)" == "Darwin" ]]; then
     exit 1
 fi
 
-if ! command -v apt-get &>/dev/null; then
-    echo "error: apt-get not found. This script requires Debian/Ubuntu." >&2
+PKG_MGR=""
+if command -v apt-get &>/dev/null; then
+    PKG_MGR="apt"
+elif command -v dnf &>/dev/null; then
+    PKG_MGR="dnf"
+else
+    echo "error: neither apt-get nor dnf found. This script requires Debian/Ubuntu or Fedora." >&2
     exit 1
 fi
 
@@ -55,21 +60,37 @@ echo
 # ---------------------------------------------------------------------------
 # 1. System packages
 # ---------------------------------------------------------------------------
-step "System packages (apt)..."
+step "System packages (${PKG_MGR})..."
 
-NEEDED=()
-for pkg in git curl zsh build-essential; do
-    if ! dpkg -s "$pkg" &>/dev/null; then
-        NEEDED+=("$pkg")
+if [[ "$PKG_MGR" == "apt" ]]; then
+    NEEDED=()
+    for pkg in git curl zsh build-essential; do
+        if ! dpkg -s "$pkg" &>/dev/null; then
+            NEEDED+=("$pkg")
+        fi
+    done
+
+    if [[ ${#NEEDED[@]} -gt 0 ]]; then
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq "${NEEDED[@]}"
+        done_msg
+    else
+        skip_msg
     fi
-done
+elif [[ "$PKG_MGR" == "dnf" ]]; then
+    NEEDED=()
+    for pkg in git curl zsh gcc gcc-c++ make; do
+        if ! rpm -q "$pkg" &>/dev/null; then
+            NEEDED+=("$pkg")
+        fi
+    done
 
-if [[ ${#NEEDED[@]} -gt 0 ]]; then
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq "${NEEDED[@]}"
-    done_msg
-else
-    skip_msg
+    if [[ ${#NEEDED[@]} -gt 0 ]]; then
+        sudo dnf install -y -q "${NEEDED[@]}"
+        done_msg
+    else
+        skip_msg
+    fi
 fi
 
 # ---------------------------------------------------------------------------

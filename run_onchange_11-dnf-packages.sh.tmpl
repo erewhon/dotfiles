@@ -1,0 +1,32 @@
+#!/bin/sh
+# {{ include "dot_config/packages/dnf-packages.txt" | sha256sum }}
+# Install Fedora packages when dnf-packages.txt changes.
+
+{{ $host := .host_defaults -}}
+{{ if hasKey .hosts .chezmoi.hostname -}}
+{{   $host = index .hosts .chezmoi.hostname -}}
+{{ end -}}
+
+{{ if not (get $host "has_dnf") -}}
+echo "[11-dnf-packages] skipping: host has no dnf"
+exit 0
+{{ else -}}
+
+set -e
+
+echo "[11-dnf-packages] installing dnf packages..."
+
+# Read package list, strip comments and blank lines
+packages=""
+while IFS= read -r line; do
+    line=$(echo "$line" | sed 's/#.*//' | xargs)
+    [ -z "$line" ] && continue
+    packages="$packages $line"
+done < "$HOME/.config/packages/dnf-packages.txt"
+
+if [ -n "$packages" ]; then
+    sudo dnf install -y -q $packages
+fi
+
+echo "[11-dnf-packages] done"
+{{ end -}}

@@ -1,0 +1,32 @@
+# Fedora packages managed by chezmoi
+# One package per line. Comments with #.
+
+# Core CLI tools
+bat
+curl
+direnv
+eza
+fd-find
+fzf
+git
+jq
+mosh
+ripgrep
+tmux
+zoxide
+
+# Development
+gcc
+gcc-c++
+make
+golang
+nodejs
+npm
+
+# Shells & terminal
+zsh
+
+# Misc utilities
+cowsay
+fortune-mod
+rlwrap
