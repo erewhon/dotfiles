@@ -1,30 +1,11 @@
-# Debian/Ubuntu packages managed by chezmoi
-# One package per line. Comments with #.
+# Debian/Ubuntu system packages managed by chezmoi
+# Only packages needed BEFORE Homebrew is available.
+# Everything else is in the Brewfile.
 
-# Core CLI tools
-bat
+# Bootstrap essentials
 curl
-direnv
-eza
-fd-find
-fzf
 git
-jq
-mosh
-ripgrep
-tmux
-zoxide
-
-# Development
-build-essential
-golang
-nodejs
-npm
-
-# Shells & terminal
 zsh
 
-# Misc utilities
-cowsay
-fortune-mod
-rlwrap
+# Build tools (required by Linuxbrew)
+build-essential

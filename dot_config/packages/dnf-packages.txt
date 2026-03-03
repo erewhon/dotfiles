@@ -1,32 +1,13 @@
-# Fedora packages managed by chezmoi
-# One package per line. Comments with #.
+# Fedora system packages managed by chezmoi
+# Only packages needed BEFORE Homebrew is available.
+# Everything else is in the Brewfile.
 
-# Core CLI tools
-bat
+# Bootstrap essentials
 curl
-direnv
-eza
-fd-find
-fzf
 git
-jq
-mosh
-ripgrep
-tmux
-zoxide
+zsh
 
-# Development
+# Build tools (required by Linuxbrew)
 gcc
 gcc-c++
 make
-golang
-nodejs
-npm
-
-# Shells & terminal
-zsh
-
-# Misc utilities
-cowsay
-fortune-mod
-rlwrap
