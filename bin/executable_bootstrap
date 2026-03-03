@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# bootstrap — set up a new Linux machine with dotfiles.
+# Installs prerequisites, Linuxbrew, chezmoi, and applies dotfiles.
+# Idempotent — safe to re-run if something fails partway through.
+#
+# Usage (on a fresh machine):
+#   curl -fsSL https://raw.githubusercontent.com/erewhon/dotfiles/main/bin/executable_bootstrap | bash
+# Or if already cloned:
+#   bash bin/executable_bootstrap
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Color / formatting
+# ---------------------------------------------------------------------------
+if [ -t 1 ]; then
+    BOLD=$'\033[1m'    GREEN=$'\033[32m'    RED=$'\033[31m'
+    DIM=$'\033[2m'     RESET=$'\033[0m'
+else
+    BOLD=""  GREEN=""  RED=""  DIM=""  RESET=""
+fi
+
+STEP=0
+TOTAL=7
+
+step() {
+    STEP=$((STEP + 1))
+    printf "  ${BOLD}[%d/%d]${RESET} %-40s" "$STEP" "$TOTAL" "$1"
+}
+
+done_msg()    { printf "${GREEN}done${RESET}\n"; }
+skip_msg()    { printf "${DIM}done (already installed)${RESET}\n"; }
+skipped_msg() { printf "${DIM}skipped${RESET}\n"; }
+
+# ---------------------------------------------------------------------------
+# Pre-flight checks
+# ---------------------------------------------------------------------------
+if [[ "$(uname)" == "Darwin" ]]; then
+    echo "This script is for Linux. On macOS:"
+    echo "  1. Install Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+    echo "  2. brew install chezmoi"
+    echo "  3. chezmoi init erewhon/dotfiles --apply"
+    exit 1
+fi
+
+if ! command -v apt-get &>/dev/null; then
+    echo "error: apt-get not found. This script requires Debian/Ubuntu." >&2
+    exit 1
+fi
+
+echo
+echo "${BOLD}bootstrap${RESET} — setting up dotfiles on a new machine"
+echo
+
+# ---------------------------------------------------------------------------
+# 1. System packages
+# ---------------------------------------------------------------------------
+step "System packages (apt)..."
+
+NEEDED=()
+for pkg in git curl zsh build-essential; do
+    if ! dpkg -s "$pkg" &>/dev/null; then
+        NEEDED+=("$pkg")
+    fi
+done
+
+if [[ ${#NEEDED[@]} -gt 0 ]]; then
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq "${NEEDED[@]}"
+    done_msg
+else
+    skip_msg
+fi
+
+# ---------------------------------------------------------------------------
+# 2. chezmoi
+# ---------------------------------------------------------------------------
+step "chezmoi..."
+
+if command -v chezmoi &>/dev/null; then
+    skip_msg
+else
+    sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+    export PATH="$HOME/.local/bin:$PATH"
+    done_msg
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Homebrew (Linuxbrew)
+# ---------------------------------------------------------------------------
+step "Homebrew (Linuxbrew)..."
+
+if [[ -d /home/linuxbrew/.linuxbrew ]]; then
+    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+    skip_msg
+else
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+    done_msg
+fi
+
+# ---------------------------------------------------------------------------
+# 4. Age encryption key
+# ---------------------------------------------------------------------------
+step "Age encryption key..."
+
+KEY_FILE="$HOME/.config/chezmoi/key.txt"
+
+if [[ -f "$KEY_FILE" ]]; then
+    printf "${DIM}done (key exists)${RESET}\n"
+else
+    echo
+    echo
+    echo "  Encrypted files (API keys, credentials) need an age key."
+    echo "  You can paste the key now, or skip to set up without encrypted files."
+    echo
+    printf "  Paste age key (or press Enter to skip): "
+    read -r AGE_KEY
+
+    if [[ -n "$AGE_KEY" ]]; then
+        mkdir -p "$(dirname "$KEY_FILE")"
+        echo "$AGE_KEY" > "$KEY_FILE"
+        chmod 600 "$KEY_FILE"
+        echo "  ${GREEN}Key saved.${RESET}"
+    else
+        echo "  ${DIM}Skipped — encrypted files won't be deployed.${RESET}"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 5. chezmoi init
+# ---------------------------------------------------------------------------
+step "chezmoi init..."
+
+if [[ -d "$HOME/.local/share/chezmoi" ]]; then
+    skip_msg
+else
+    chezmoi init erewhon/dotfiles
+    done_msg
+fi
+
+# ---------------------------------------------------------------------------
+# 6. chezmoi apply
+# ---------------------------------------------------------------------------
+step "chezmoi apply..."
+
+chezmoi apply
+done_msg
+
+# ---------------------------------------------------------------------------
+# 7. Login shell
+# ---------------------------------------------------------------------------
+step "Login shell → zsh..."
+
+if [[ "${SHELL:-}" == */zsh ]]; then
+    skip_msg
+else
+    ZSH_PATH=$(which zsh)
+    if grep -qx "$ZSH_PATH" /etc/shells; then
+        sudo chsh -s "$ZSH_PATH" "$USER"
+        done_msg
+    else
+        echo "$ZSH_PATH" | sudo tee -a /etc/shells >/dev/null
+        sudo chsh -s "$ZSH_PATH" "$USER"
+        done_msg
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+echo
+echo "${BOLD}Setup complete!${RESET} Next steps:"
+echo "  - Log out and back in (or run: ${BOLD}exec zsh${RESET})"
+echo "  - In tmux, press ${BOLD}prefix + I${RESET} to install plugins"
+if [[ ! -f "$KEY_FILE" ]]; then
+    echo "  - To enable encrypted files later, place your age key at:"
+    echo "    ${DIM}${KEY_FILE}${RESET}"
+fi
+echo
