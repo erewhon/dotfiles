@@ -189,15 +189,36 @@ call_vision_api() {
             temperature: 0.1
         }' > "$payload_file"
 
-    local response
-    response=$(curl -sf --max-time "$API_TIMEOUT" "${API_BASE_URL}/v1/chat/completions" \
-        -H "Content-Type: application/json" \
-        -d @"$payload_file" 2>/dev/null) || return 1
+    local response http_code body retries=0 max_retries=2
+    while [[ $retries -le $max_retries ]]; do
+        response=$(curl -s --max-time "$API_TIMEOUT" -w "\n%{http_code}" \
+            "${API_BASE_URL}/v1/chat/completions" \
+            -H "Content-Type: application/json" \
+            -d @"$payload_file" 2>/dev/null) || { retries=$((retries + 1)); sleep 2; continue; }
 
-    local content
-    content=$(echo "$response" | jq -r '.choices[0].message.content // empty') || return 1
-    [[ -n "$content" ]] || return 1
-    echo "$content"
+        http_code=$(echo "$response" | tail -1)
+        body=$(echo "$response" | sed '$d')
+
+        if [[ "$http_code" == "200" ]]; then
+            local content
+            content=$(echo "$body" | jq -r '.choices[0].message.content // empty') || return 1
+            [[ -n "$content" ]] || return 1
+            echo "$content"
+            return 0
+        fi
+
+        # Log the error on last attempt
+        if [[ $retries -eq $max_retries ]]; then
+            local err_msg
+            err_msg=$(echo "$body" | jq -r '.error.message // .error // empty' 2>/dev/null)
+            LAST_API_ERROR="HTTP ${http_code}${err_msg:+: $err_msg}"
+            return 1
+        fi
+        retries=$((retries + 1))
+        sleep 2
+    done
+    LAST_API_ERROR="connection failed after $((max_retries + 1)) attempts"
+    return 1
 }
 
 # Parse API response content into description and category.
@@ -297,6 +318,7 @@ organized=0
 skipped=0
 failed=0
 declare -A category_counts
+LAST_API_ERROR=""
 
 if [[ "$DRY_RUN" == true ]]; then
     echo "${YELLOW}Dry run${RESET} — no files will be moved."
@@ -322,9 +344,10 @@ for i in "${!screenshot_files[@]}"; do
     fi
 
     # Call vision API
+    LAST_API_ERROR=""
     response=$(call_vision_api "$filepath") || response=""
     if [[ -z "$response" ]]; then
-        printf "         ${RED}failed${RESET} — API request failed\n"
+        printf "         ${RED}failed${RESET} — %s\n" "${LAST_API_ERROR:-API request failed}"
         failed=$((failed + 1))
         continue
     fi
