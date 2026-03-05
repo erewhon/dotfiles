@@ -26,8 +26,8 @@ fi
 # Config defaults
 # ---------------------------------------------------------------------------
 SCREENSHOTS_DIR="$HOME/Screenshots"
-API_BASE_URL="https://ai-spark.peacock-bramble.ts.net"
-MODEL_NAME=""
+API_BASE_URL="https://llm.peacock-bramble.ts.net"
+MODEL_NAME="vision"
 DRY_RUN=false
 LIMIT=0
 
