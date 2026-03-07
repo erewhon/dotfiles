@@ -37,6 +37,22 @@
   has_dnf     = false
   is_personal = true
 
+[hosts.euclid]
+  is_remote   = false
+  has_gui     = true
+  has_brew    = true
+  has_apt     = true
+  has_dnf     = false
+  is_personal = true
+
+[hosts.electra]
+  is_remote   = true
+  has_gui     = true
+  has_brew    = false
+  has_apt     = true
+  has_dnf     = false
+  is_personal = true
+
 [hosts.hypatia]
   is_remote   = false
   has_gui     = true
