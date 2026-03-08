@@ -19,5 +19,36 @@ export XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}
 export ZDOTDIR=${XDG_CONFIG_HOME}/zsh
 export ZSH_CACHE_DIR="${XDG_CACHE_HOME}/ohmyzsh"
 
-# Some applications need this here. <sigh>
-export PATH="/Library/Java/JavaVirtualMachines/jdk1.8.0_144.jdk/Contents/Home/bin:/Users/erewhon/go/bin:/Users/erewhon/bin:/Users/erewhon/.cargo/bin:/Users/erewhon/.local/bin:/Users/erewhon/.emacs.d/bin:/Users/erewhon/.krew/bin:/usr/local/opt/python-3.9.7/bin:/Users/erewhon/Library/Python/3.9/bin:/snap/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/usr/games:/bin:/usr/sbin:/sbin:/Library/TeX/texbin:/opt/X11/bin:/Library/Apple/usr/bin:/Library/Frameworks/Mono.framework/Versions/Current/Commands"
+# Homebrew / Linuxbrew
+if [[ -d /opt/homebrew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [[ -d /home/linuxbrew/.linuxbrew ]]; then
+    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+fi
+
+# Core paths (deduplicated by typeset -U)
+typeset -U path
+path=(
+    ~/bin
+    ~/.local/bin
+    ~/.cargo/bin
+    ~/.config/doom-emacs/bin
+    ~/.krew/bin
+    ~/.rd/bin
+    /usr/local/bin
+    /usr/local/sbin
+    /snap/bin
+    $path
+)
+
+# Go
+if command -v go &>/dev/null; then
+    export GOPATH=$(go env GOPATH)
+    path=($(go env GOPATH)/bin $path)
+fi
+
+# Bun
+if [[ -d "$HOME/.bun" ]]; then
+    export BUN_INSTALL="$HOME/.bun"
+    path=($BUN_INSTALL/bin $path)
+fi
