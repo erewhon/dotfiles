@@ -64,7 +64,13 @@ brew "yazi"
 
 # Security & secrets
 brew "age"
+{{ if $host.is_personal -}}
+brew "gitleaks"
+{{ end -}}
 brew "nmap"
+{{ if $host.is_personal -}}
+brew "trufflehog"
+{{ end -}}
 
 # Development
 brew "chezmoi"
