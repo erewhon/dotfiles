@@ -1,35 +1,6 @@
-arch_name="$(uname -m)"
-os_name="$(uname -s)"
-
-if [[ "${os_name}" == "Darwin" ]]; then
-    # MacOS.  Distinguish between M1 and x86.
-    JULIA=/Applications/Julia-1.8.app/Contents/Resources/julia
-    if [[ "${arch_name}" == "arm64" ]]; then
-        export HOMEBREW_PREFIX="/opt/homebrew";
-        export HOMEBREW_CELLAR="/opt/homebrew/Cellar";
-        export HOMEBREW_REPOSITORY="/opt/homebrew";
-        export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${JULIA}/bin${PATH+:$PATH}";
-        export MANPATH="/opt/homebrew/share/man${MANPATH+:$MANPATH}:";
-        export INFOPATH="/opt/homebrew/share/info:${INFOPATH:-}";
-    else
-        export HOMEBREW_PREFIX="/usr/local";
-        export HOMEBREW_CELLAR="/usr/local/Cellar";
-        export HOMEBREW_REPOSITORY="/usr/local/Homebrew";
-        export PATH="/usr/local/bin:/usr/local/sbin${PATH+:$PATH}";
-        export MANPATH="/usr/local/share/man${MANPATH+:$MANPATH}:";
-        export INFOPATH="/usr/local/share/info:${INFOPATH:-}";
-    fi
-
-    # MacOS has a problem with tmux-256color
-    if [[ "$TERM" == "tmux-256color" ]]; then
-        TERM="screen-256color"
-    fi
-else
-    # For Linux: add Linuxbrew if present, plus /usr/local/bin
-    if [[ -d /home/linuxbrew/.linuxbrew ]]; then
-        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-    fi
-    export PATH="/usr/local/bin:/usr/local/sbin${PATH+:$PATH}";
+# macOS has a problem with tmux-256color
+if [[ "$(uname)" == "Darwin" && "$TERM" == "tmux-256color" ]]; then
+    TERM="screen-256color"
 fi
 
 #
@@ -83,40 +54,8 @@ fi
 
 # Zsh config.   A lot of oh-my-zsh, a lot of other things...
 #
-export MANPATH="/usr/local/man:$MANPATH"
 export DISABLE_AUTO_UPDATE="true"         # Do not auto update oh my zsh.  Chezmoi manages it.
 export GPG_TTY=$(tty)
-
-# add elements to path, uniquely
-typeset -U path
-
-# set up paths
-path=(~/bin
-      ~/.cargo/bin
-      ~/.local/bin
-      ~/.config/doom-emacs/bin
-      ~/.krew/bin
-      ~/.rd/bin
-      /usr/local/opt/python-3.9.7/bin
-      ~/Library/Python/3.9/bin
-      # /usr/local/bin
-      # /usr/local/sbin
-      /snap/bin
-      /opt/homebrew/opt/postgresql@15/bin
-      $path)
-
-# bun
-export BUN_INSTALL="$HOME/.bun"
-export PATH="$BUN_INSTALL/bin:$PATH"
-
-#
-# Set up different languages
-#
-if command -v go &> /dev/null; then
-    export GOPATH=$( go env GOPATH )
-    path=($( go env GOPATH )/bin $path)
-
-fi
 
 source $ZDOTDIR/.shellrc
 
