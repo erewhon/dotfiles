@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""update-llm-configs — query OpenAI-compatible /v1/models endpoints and update
+opencode and crush config files with discovered providers and models.
+
+Usage:
+    update-llm-configs [--api-key KEY] [--dry-run] URL [URL...]
+"""
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+OPENCODE_CONFIG = Path.home() / ".config" / "opencode" / "opencode.json"
+CRUSH_CONFIG = Path.home() / ".local" / "share" / "crush" / "crush.json"
+
+
+def fetch_models(base_url: str, api_key: str) -> list[dict]:
+    """Query /v1/models and return the model list."""
+    url = f"{base_url.rstrip('/')}/v1/models"
+    req = urllib.request.Request(
+        url, headers={"Authorization": f"Bearer {api_key}"}
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    return data.get("data", [])
+
+
+def provider_id_from_url(url: str) -> str:
+    """Extract first subdomain as provider ID.
+
+    e.g. https://llm.peacock-bramble.ts.net -> llm
+    """
+    from urllib.parse import urlparse
+
+    hostname = urlparse(url).hostname or ""
+    return hostname.split(".")[0]
+
+
+def build_opencode_provider(
+    provider_id: str, base_url: str, api_key: str, models: list[dict]
+) -> tuple[str, dict]:
+    """Build an opencode provider entry. Returns (key, value)."""
+    key = provider_id.replace("-", "_")
+    model_entries = {}
+    for m in sorted(models, key=lambda m: m["id"]):
+        model_entries[m["id"]] = {"name": m["id"]}
+    return key, {
+        "api_key": api_key,
+        "base_url": f"{base_url.rstrip('/')}/v1",
+        "models": model_entries,
+    }
+
+
+def build_crush_provider(
+    provider_id: str, base_url: str, api_key: str, models: list[dict]
+) -> tuple[str, dict]:
+    """Build a crush provider entry. Returns (key, value)."""
+    key = provider_id.replace("_", "-")
+    model_entries = []
+    for m in sorted(models, key=lambda m: m["id"]):
+        model_entries.append(
+            {
+                "id": m["id"],
+                "name": m["id"],
+                "context_window": 131072,
+                "default_max_tokens": 16384,
+            }
+        )
+    return key, {
+        "api_key": api_key,
+        "base_url": f"{base_url.rstrip('/')}/v1",
+        "models": model_entries,
+    }
+
+
+def update_opencode(providers: dict[str, dict], dry_run: bool) -> None:
+    """Update the opencode config file."""
+    if OPENCODE_CONFIG.exists():
+        config = json.loads(OPENCODE_CONFIG.read_text())
+    else:
+        config = {"$schema": "https://opencode.ai/config.json"}
+
+    config["provider"] = providers
+
+    formatted = json.dumps(config, indent=2) + "\n"
+    if dry_run:
+        print(f"--- {OPENCODE_CONFIG} ---")
+        print(formatted)
+    else:
+        OPENCODE_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        OPENCODE_CONFIG.write_text(formatted)
+        print(f"Updated {OPENCODE_CONFIG}")
+
+
+def update_crush(providers: dict[str, dict], dry_run: bool) -> None:
+    """Update the crush config file."""
+    if CRUSH_CONFIG.exists():
+        config = json.loads(CRUSH_CONFIG.read_text())
+    else:
+        config = {}
+
+    config["models"] = {}
+    config["recent_models"] = {}
+    config["providers"] = providers
+
+    formatted = json.dumps(config, indent=2) + "\n"
+    if dry_run:
+        print(f"--- {CRUSH_CONFIG} ---")
+        print(formatted)
+    else:
+        CRUSH_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        CRUSH_CONFIG.write_text(formatted)
+        print(f"Updated {CRUSH_CONFIG}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Query /v1/models endpoints and update LLM config files."
+    )
+    parser.add_argument(
+        "urls", nargs="+", metavar="URL", help="Base URLs of OpenAI-compatible servers"
+    )
+    parser.add_argument(
+        "--api-key",
+        default=os.environ.get("LLM_API_KEY"),
+        help="API key (default: $LLM_API_KEY)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would change without writing files",
+    )
+    args = parser.parse_args()
+
+    if not args.api_key:
+        parser.error("--api-key or LLM_API_KEY env var is required")
+
+    opencode_providers: dict[str, dict] = {}
+    crush_providers: dict[str, dict] = {}
+
+    for url in args.urls:
+        provider_id = provider_id_from_url(url)
+        print(f"Querying {url} (provider: {provider_id})...")
+
+        try:
+            models = fetch_models(url, args.api_key)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
+            print(f"  Error fetching models from {url}: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"  Found {len(models)} models")
+
+        oc_key, oc_val = build_opencode_provider(
+            provider_id, url, args.api_key, models
+        )
+        opencode_providers[oc_key] = oc_val
+
+        cr_key, cr_val = build_crush_provider(
+            provider_id, url, args.api_key, models
+        )
+        crush_providers[cr_key] = cr_val
+
+    update_opencode(opencode_providers, args.dry_run)
+    update_crush(crush_providers, args.dry_run)
+
+
+if __name__ == "__main__":
+    main()
