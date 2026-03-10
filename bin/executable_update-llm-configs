@@ -49,8 +49,11 @@ def build_opencode_provider(
     for m in sorted(models, key=lambda m: m["id"]):
         model_entries[m["id"]] = {"name": m["id"]}
     return key, {
-        "api_key": api_key,
-        "base_url": f"{base_url.rstrip('/')}/v1",
+        "npm": "@ai-sdk/openai-compatible",
+        "options": {
+            "baseURL": f"{base_url.rstrip('/')}/v1",
+            "apiKey": api_key,
+        },
         "models": model_entries,
     }
 
