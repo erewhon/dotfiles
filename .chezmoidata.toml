@@ -84,3 +84,11 @@
   has_apt     = true
   has_dnf     = false
   is_personal = true
+
+[hosts.08e7dd661e96]
+  is_remote   = false
+  has_gui     = false
+  has_brew    = true
+  has_apt     = true
+  has_dnf     = false
+  is_personal = true

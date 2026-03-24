@@ -52,66 +52,52 @@ if command -v starship &> /dev/null; then
     eval "$(starship init zsh)"
 fi
 
-# Zsh config.   A lot of oh-my-zsh, a lot of other things...
-#
-export DISABLE_AUTO_UPDATE="true"         # Do not auto update oh my zsh.  Chezmoi manages it.
 export GPG_TTY=$(tty)
 
 source $ZDOTDIR/.shellrc
 
 #
-# It's the 21st century.  Why are our Unix terminals so boring?  Back
-# in the 1980s we had more colorful ANSI terminals.   Well, turns out we
-# *can* have color.  We just need to turn on the bling.   And thanks
-# to Google, Stackoverflow, and Github Gist's, it's easy!
+# Shell options
 #
-
-### to add...
-
-ENABLE_CORRECTION="true"
-DISABLE_UNTRACKED_FILES_DIRTY="true"
 HIST_STAMPS="yyyy-mm-dd"
-setopt AUTO_CD                       # You can just type a directory and CD there
+setopt AUTO_CD
 
-# https://github.com/robbyrussell/oh-my-zsh/tree/master/plugins/jira
-#   $JIRA_URL - Your JIRA instance's URL
-#   $JIRA_NAME - Your JIRA username; used as the default user for assigned/reported searches
-#   $JIRA_PREFIX - Prefix added to issue ID arguments
-#   $JIRA_RAPID_BOARD - Set to true if you use Rapid Board
-#   $JIRA_DEFAULT_ACTION - Action to do when jira is called with no arguments; defaults to "new"
+#
+# Zinit
+#
+ZINIT_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/zinit/zinit.git"
+if [[ -f "$ZINIT_HOME/zinit.zsh" ]]; then
+    source "$ZINIT_HOME/zinit.zsh"
 
-plugins=(aws
-         brew        # aliases of note: brews, bubo, bubu
-         chucknorris # chuck, chuck_cow
-         direnv
-         docker
-         git         # aliases of note: g, ga, gcmsg, gdca
-                     #   grup, ggpull, glg, glgp, glo, glol,
-                     #   gupa
-         golang
-         httpie
-         history
-         kubectl
-         mosh
-         npm
-         ssh-agent
-         tmux
-         zsh-autosuggestions   # Fish-like auto suggestions
-        )
+    # ssh-agent (load early, before turbo)
+    zstyle :omz:plugins:ssh-agent lifetime 4h
+    zinit snippet OMZP::ssh-agent
 
-# zstyle :omz:plugins:ssh-agent lazy yes
-zstyle :omz:plugins:ssh-agent lifetime 4h
+    # Turbo-loaded omz plugins (aliases & completions)
+    zinit wait lucid for \
+        OMZP::aws \
+        OMZP::brew \
+        OMZP::direnv \
+        OMZP::docker \
+        OMZP::git \
+        OMZP::golang \
+        OMZP::history \
+        OMZP::kubectl \
+        OMZP::npm \
+        OMZP::tmux
+
+    # Third-party plugins (turbo-loaded)
+    zinit wait lucid for \
+        atload"_zsh_autosuggest_start" \
+            zsh-users/zsh-autosuggestions \
+        zsh-users/zsh-syntax-highlighting
+else
+    echo "[zshrc] zinit not found at $ZINIT_HOME"
+fi
 
 # User configuration
 
 [ ! -d "$XDG_STATE_HOME/zsh" ] && mkdir -p "$XDG_STATE_HOME/zsh"
-[ ! -d "$XDG_STATE_HOME/oh-my-zsh" ] && mkdir -p "$XDG_STATE_HOME/oh-my-zsh"
-
-export ZSH=$XDG_STATE_HOME/oh-my-zsh
-source $ZSH/oh-my-zsh.sh
-
-unsetopt correct_all
-unsetopt correct
 
 export EDITOR="vi"                             # $EDITOR should open in terminal.  Use vi rather than dealing with Emacs session issues
 export VERSION_CONTROL=numbered
@@ -151,9 +137,9 @@ fi
 # Level-up ls if possible
 #
 if command -v eza 1>/dev/null 2>&1; then
-    unalias l
-    unalias ll
-    unalias ls
+    unalias l 2>/dev/null
+    unalias ll 2>/dev/null
+    unalias ls 2>/dev/null
 
     export EZA_GRID_ROWS=30
 
@@ -213,21 +199,6 @@ bindkey -M emacs '\es' sesh-sessions
 bindkey -M vicmd '\es' sesh-sessions
 bindkey -M viins '\es' sesh-sessions
 
-#if command -v goose 1>/dev/null 2>&1; then
-#    # Below lifted from https://block.github.io/goose/blog/2025/05/12/local-goose-qwen3/
-#    # zsh helper to use goose if you make a typo or just want to yolo into the shell
-#    #command_not_found_handler() {
-#    #  local cmd="$*"
-#    #  echo "🪿:"
-#    #  goose run -t "can you try to run this command please: $cmd"
-#    #}
-#    command_not_found_handler() {
-#      local cmd="$*"
-#      echo "🪿:"
-#      GOOSE_PROVIDER=ollama GOOSE_MODEL=michaelneale/qwen3 goose run -t "can you try to run this command please: $cmd"
-#    }
-#fi
-
 #
 #
 # Kubenetes configuration.  ("N" modifier doesn't error if no match.)
@@ -278,14 +249,6 @@ zshaddhistory() {
     echo -n "$(date "+%s") $1" >> "$HOME/.zsh_full_history"
 }
 
-# clean up the line when exiting with Ctrl-D                                    
-# if Ctrl-D is hit, there isn't a terminating newline -- so we'll add a  
-# useful message which probably won't ever be written (! specifies an    
-# event, so it'll only work surrounded in quotes                         
-# zshexit() {
-#    echo "!EXIT! $(date "+%s")" >> "$HOME/.zsh_full_history"
-# }
-
 #
 # Switched from McFly to Atuin
 #
@@ -293,18 +256,9 @@ if command -v atuin &> /dev/null; then
     eval "$(atuin init zsh)"
 fi
 
-#
-# experimental: McFly.  Need to troubleshoot why this sometimes doesn't seem to bind!
-#
-#if command -v mcfly &> /dev/null; then
-#    # export MCFLY_FUZZY=true
-#    source $ZDOTDIR/mcfly.zsh
-#fi
-
 sources=(
     "/usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
     "$HOME/.zshrc-local"
-    "$ZDOTDIR/.p10k.zsh"
     "$(brew --prefix asdf)/libexec/asdf.sh"
     "$HOME/.config/broot/launcher/bash/br"
     "$HOME/creds.env"

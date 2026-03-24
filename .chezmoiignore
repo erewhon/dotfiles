@@ -1,6 +1,4 @@
 README.md
-.local/state/oh-my-zsh/custom/themes/powerlevel10k/**/*.zwc
-.local/state/oh-my-zsh/plugins/chucknorris/fortunes/chucknorris.dat
 
 # Host classification: look up current host, fall back to defaults
 {{ $host := .host_defaults }}

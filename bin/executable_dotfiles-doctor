@@ -151,18 +151,12 @@ check_chezmoi_state() {
 
     # Check externals
     local externals=(
-        "$HOME/.local/state/oh-my-zsh"
-        "$HOME/.local/state/oh-my-zsh/custom/plugins/zsh-autosuggestions"
-        "$HOME/.local/state/oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
-        "$HOME/.local/state/oh-my-zsh/custom/themes/powerlevel10k"
+        "$HOME/.local/share/zinit/zinit.git"
         "$HOME/.config/tmux/plugins/tpm"
         "$HOME/.config/tmux/plugins/catppuccin/tmux"
     )
     local labels=(
-        "oh-my-zsh"
-        "zsh-autosuggestions plugin"
-        "zsh-syntax-highlighting plugin"
-        "powerlevel10k theme"
+        "zinit"
         "tmux plugin manager (tpm)"
         "catppuccin tmux theme"
     )

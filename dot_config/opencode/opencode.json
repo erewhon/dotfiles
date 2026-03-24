@@ -1,6 +1,132 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "provider": {},
+  "provider": {
+    "llm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LLM Router",
+      "options": {
+        "baseURL": "https://llm.peacock-bramble.ts.net/v1",
+        "apiKey": "sk-litellm-master"
+      },
+      "models": {
+        "coder": {
+          "name": "Coder (no thinking, Spark)",
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        },
+        "coder-veryfast": {
+          "name": "Coder VeryFast 4B (no thinking, delphi)",
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        },
+        "thinker": {
+          "name": "Thinker (thinking, Spark)",
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        },
+        "research": {
+          "name": "Research 27B (VPN, delphi)",
+          "limit": {
+            "context": 65536,
+            "output": 32768
+          }
+        },
+        "vision": {
+          "name": "Vision (Spark)",
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        },
+        "claude-opus-4-6": {
+          "name": "Claude Opus 4.6 (Zen, paid)",
+          "limit": {
+            "context": 200000,
+            "output": 8192
+          }
+        },
+        "claude-sonnet-4-6": {
+          "name": "Claude Sonnet 4.6 (Zen, paid)",
+          "limit": {
+            "context": 200000,
+            "output": 8192
+          }
+        },
+        "claude-haiku-4-5": {
+          "name": "Claude Haiku 4.5 (Zen, paid)",
+          "limit": {
+            "context": 200000,
+            "output": 8192
+          }
+        },
+        "glm-5": {
+          "name": "GLM 5 (Zen, paid)",
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        },
+        "kimi-k2.5": {
+          "name": "Kimi K2.5 (Zen, paid)",
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        },
+        "nemotron-3-super-free": {
+          "name": "Nemotron 3 Super (Zen, free)",
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        },
+        "mimo-v2-flash-free": {
+          "name": "MiMo V2 Flash (Zen, free)",
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        },
+        "big-pickle": {
+          "name": "Big Pickle (Zen, free)",
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        },
+        "minimax-m2.5-free": {
+          "name": "MiniMax M2.5 (Zen, free)",
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        }
+      }
+    },
+    "spark": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Spark Direct",
+      "options": {
+        "baseURL": "http://archimedes.local:5391/v1",
+        "apiKey": "not-needed"
+      },
+      "models": {
+        "Qwen/Qwen3-Coder-Next-FP8": {
+          "name": "Coder Next FP8 (direct, no proxy)",
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
+        }
+      }
+    }
+  },
   "lsp": {
     "rust": {
       "command": [
