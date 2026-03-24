@@ -38,23 +38,77 @@
     "type": "command",
     "command": "input=$(cat); cwd=$(echo \"$input\" | jq -r '.workspace.current_dir // .cwd'); git_branch=\"\"; if git -C \"$cwd\" rev-parse --git-dir > /dev/null 2>&1; then branch=$(git -C \"$cwd\" branch 2>/dev/null | sed -n 's/* \\(.*\\)/\\1/p'); [ -n \"$branch\" ] && git_branch=\" $branch\"; fi; printf \"\\033[01;32m\\033[1m%s@%s \\033[36m%s\\033[32m%s\\033[0m\" \"$(whoami)\" \"$(hostname -s)\" \"$cwd\" \"$git_branch\""
   },
-  "alwaysThinkingEnabled": false,
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "claude-mem@thedotmack": true,
+    "typescript-lsp@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "thedotmack": {
+      "source": {
+        "source": "github",
+        "repo": "thedotmack/claude-mem"
+      }
+    }
+  },
   "mcpServers": {
-    "taskmaster-ai": {
+    "nous": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/home/erewhon/Projects/erewhon/nous/nous-py",
+        "run",
+        "--extra",
+        "mcp-server",
+        "nous-mcp"
+      ],
+      "env": {}
+    },
+    "playwright": {
+      "type": "stdio",
       "command": "npx",
       "args": [
         "-y",
-        "--package=task-master-ai",
-        "task-master-ai"
+        "@playwright/mcp@latest"
       ],
-      "env": {
-        "ANTHROPIC_API_KEY": "sk-misc",
-        "MODEL": "claude-sonnet-4-5-20250929",
-        "MAX_TOKENS": 64000,
-        "TEMPERATURE": 0.2,
-        "DEFAULT_SUBTASKS": 5,
-        "DEFAULT_PRIORITY": "medium"
-      }
+      "env": {}
+    },
+    "gaol": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/home/erewhon/Projects/erewhon/gaol",
+        "run",
+        "--extra",
+        "mcp-server",
+        "gaol-mcp"
+      ],
+      "env": {}
+    },
+    "context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": {}
+    },
+    "tree-sitter": {
+      "type": "stdio",
+      "command": "mcp-server-tree-sitter",
+      "args": [],
+      "env": {}
+    },
+    "ast-grep": {
+      "type": "stdio",
+      "command": "ast-grep-server",
+      "args": [],
+      "env": {}
     }
   }
 }

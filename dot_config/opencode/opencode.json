@@ -1,4 +1,99 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "provider": {}
+  "provider": {},
+  "lsp": {
+    "rust": {
+      "command": [
+        "rust-analyzer"
+      ],
+      "extensions": [
+        ".rs"
+      ]
+    },
+    "python": {
+      "command": [
+        "pylsp"
+      ],
+      "extensions": [
+        ".py"
+      ]
+    },
+    "typescript": {
+      "command": [
+        "typescript-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx"
+      ]
+    }
+  },
+  "plugin": [
+    "open-mem"
+  ],
+  "mcp": {
+    "tree-sitter": {
+      "type": "local",
+      "command": [
+        "mcp-server-tree-sitter"
+      ],
+      "enabled": true
+    },
+    "ast-grep": {
+      "type": "local",
+      "command": [
+        "ast-grep-server"
+      ],
+      "enabled": true
+    },
+    "nous": {
+      "type": "local",
+      "command": [
+        "uv",
+        "--directory",
+        "/home/erewhon/Projects/erewhon/nous/nous-py",
+        "run",
+        "--extra",
+        "mcp-server",
+        "nous-mcp"
+      ],
+      "enabled": true
+    },
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "enabled": true
+    },
+    "gaol": {
+      "type": "local",
+      "command": [
+        "uv",
+        "--directory",
+        "/home/erewhon/Projects/erewhon/gaol",
+        "run",
+        "--extra",
+        "mcp-server",
+        "gaol-mcp"
+      ],
+      "enabled": true
+    },
+    "context7": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "enabled": true
+    }
+  },
+  "model": "llm/coder",
+  "small_model": "llm/coder-veryfast"
 }
