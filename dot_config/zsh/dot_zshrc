@@ -63,6 +63,11 @@ HIST_STAMPS="yyyy-mm-dd"
 setopt AUTO_CD
 
 #
+# Emacs keybindings (Ctrl-A, Ctrl-E, etc.)
+#
+bindkey -e
+
+#
 # Zinit
 #
 ZINIT_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/zinit/zinit.git"
