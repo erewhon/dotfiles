@@ -83,8 +83,7 @@ if [[ -f "$ZINIT_HOME/zinit.zsh" ]]; then
         OMZP::golang \
         OMZP::history \
         OMZP::kubectl \
-        OMZP::npm \
-        OMZP::tmux
+        OMZP::npm
 
     # Third-party plugins (turbo-loaded)
     zinit wait lucid for \
