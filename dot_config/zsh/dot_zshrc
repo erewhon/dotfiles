@@ -99,6 +99,9 @@ else
     echo "[zshrc] zinit not found at $ZINIT_HOME"
 fi
 
+# Initialize completion system
+autoload -Uz compinit && compinit -d "$XDG_CACHE_HOME/zsh/zcompdump-${ZSH_VERSION}"
+
 # User configuration
 
 [ ! -d "$XDG_STATE_HOME/zsh" ] && mkdir -p "$XDG_STATE_HOME/zsh"
