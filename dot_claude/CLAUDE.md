@@ -9,6 +9,16 @@
 - Use prettier for code formatting with Typescript
 - Do not restore, revert, or remove files without asking first
 
+## Licensing
+
+- Default to AGPL-3.0 for my web-based projects. Reason: AGPL's network-use clause stops third parties from running a hosted version without contributing modifications back, which GPL and permissive licenses don't prevent. If a project needs a different license (e.g. a library meant for wide adoption), ask before deviating.
+
+## Tailscale
+
+- I use **Tailscale Services** (capital-S), the tailnet-level service registry feature — NOT plain `tailscale serve` (single-node HTTP proxy). The confusing part: both are configured through the `tailscale serve` CLI, but Tailscale Services requires the `--service=svc:NAME` flag. When inspecting or modifying my setup, always work with `tailscale serve ... --service=svc:NAME` commands (or `get-config` / `set-config` for the JSON form), never plain `tailscale serve` commands that target a single node. Docs: https://tailscale.com/docs/features/tailscale-services
+- Renaming a Tailscale Service has no single "rename" op: drain the old, clear it, create the new one, then redefine/approve via the admin console in the browser. Always flag the admin-console step to the user before running the CLI sequence.
+- **Tailscale Services have no hairpin routing** — you cannot reach a service from the same host that advertises it. `curl https://foo.peacock-bramble.ts.net/` from the host running svc:foo will time out even when the service is perfectly healthy. To verify a service is up, either test from a different tailnet device, or test the backend directly on `127.0.0.1:<port>`.
+
 ## Content Creation
 
 I create YouTube videos, live streams, and blog posts about coding and technology.

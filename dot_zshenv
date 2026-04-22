@@ -51,3 +51,4 @@ if [[ -d "$HOME/.bun" ]]; then
     export BUN_INSTALL="$HOME/.bun"
     path=($BUN_INSTALL/bin $path)
 fi
+export HOARDFS_REPO=/data/hoardfs

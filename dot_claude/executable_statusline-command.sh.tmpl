@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Claude Code status line script (managed by chezmoi)
+
+input=$(cat)
+
+cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd')
+display_cwd="${cwd/#$HOME/\~}"
+
+model=$(echo "$input" | jq -r '.model.display_name // empty')
+output_style=$(echo "$input" | jq -r '.output_style.name // empty')
+used_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
+
+# Build model/style segment
+model_segment=""
+if [ -n "$model" ]; then
+  if [ -n "$output_style" ] && [ "$output_style" != "default" ] && [ "$output_style" != "Default" ]; then
+    model_segment="$model ($output_style)"
+  else
+    model_segment="$model"
+  fi
+fi
+
+# Build context segment
+context_segment=""
+if [ -n "$used_pct" ]; then
+  context_segment=$(printf "ctx:%.0f%%" "$used_pct")
+fi
+
+{{ $host := index .hosts .chezmoi.hostname | default .host_defaults -}}
+{{ if $host.is_personal -}}
+# Rate limit segment (personal/home hosts only)
+rate_segment=""
+rate_7d=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+if [ -n "$rate_7d" ]; then
+  rate_segment=$(printf "7d:%.0f%%" "$rate_7d")
+fi
+{{ end -}}
+
+# Git branch
+git_branch=""
+if git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1; then
+  branch=$(git -C "$cwd" -c gc.auto=0 branch 2>/dev/null | sed -n 's/* \(.*\)/\1/p')
+  [ -n "$branch" ] && git_branch=" $branch"
+fi
+
+# Output with per-segment colors
+# green=user@host, cyan=path, yellow=git, white=model, magenta=context, red/yellow=rate limit
+printf "\033[01;32m%s@%s \033[36m%s\033[33m%s\033[0m" \
+  "$(whoami)" "$(hostname -s)" "$display_cwd" "$git_branch"
+
+[ -n "$model_segment" ] && printf "  \033[37m%s\033[0m" "$model_segment"
+[ -n "$context_segment" ] && printf "  \033[35m%s\033[0m" "$context_segment"
+{{ if $host.is_personal -}}
+[ -n "$rate_segment" ] && printf "  \033[33;1m%s\033[0m" "$rate_segment"
+{{ end -}}
