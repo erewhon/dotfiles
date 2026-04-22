@@ -22,6 +22,15 @@ README.md
 {{ if not (get $host "is_personal") }}
 .config/opencode
 .local/share/crush
+.claude/agents/content-researcher.md
+.claude/agents/script-writer.md
+.claude/agents/thumbnail-ideas.md
+.claude/commands/blog-draft.md
+.claude/commands/video-outline.md
+.claude/commands/stream-prep.md
+.claude/skills/content-creation
+.claude/skills/story-explanation
+.config/zellij/layouts/videopod.kdl
 {{ end }}
 
 # Skip macOS-only configs on Linux

@@ -1,3 +1,4 @@
+{{- $host := index .hosts .chezmoi.hostname | default .host_defaults -}}
 ## Development Workflow
 
 - Use "uv" for Python code and "pnpm" for Javascript
@@ -8,7 +9,7 @@
 - Use pytest for testing
 - Use prettier for code formatting with Typescript
 - Do not restore, revert, or remove files without asking first
-
+{{ if $host.is_personal }}
 ## Licensing
 
 - Default to AGPL-3.0 for my web-based projects. Reason: AGPL's network-use clause stops third parties from running a hosted version without contributing modifications back, which GPL and permissive licenses don't prevent. If a project needs a different license (e.g. a library meant for wide adoption), ask before deviating.
@@ -58,3 +59,4 @@ I create YouTube videos, live streams, and blog posts about coding and technolog
 - `/blog-draft` - Draft a blog post on a topic
 - `/stream-prep` - Prepare for a live stream session
 - `/research-topic` - Research a topic for content creation
+{{ end -}}
