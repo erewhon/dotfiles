@@ -31,8 +31,23 @@ fi
 # Rate limit segment (personal/home hosts only)
 rate_segment=""
 rate_7d=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+resets_at=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
 if [ -n "$rate_7d" ]; then
-  rate_segment=$(printf "7d:%.0f%%" "$rate_7d")
+  reset_info=""
+  if [ -n "$resets_at" ]; then
+    now=$(date +%s)
+    remaining=$(( resets_at - now ))
+    if [ "$remaining" -gt 0 ]; then
+      hours=$(( remaining / 3600 ))
+      mins=$(( (remaining % 3600) / 60 ))
+      if [ "$hours" -gt 0 ]; then
+        reset_info=" resets ${hours}h${mins}m"
+      else
+        reset_info=" resets ${mins}m"
+      fi
+    fi
+  fi
+  rate_segment=$(printf "7d:%.0f%%%s" "$rate_7d" "$reset_info")
 fi
 {{ end -}}
 
