@@ -30,7 +30,6 @@ README.md
 .claude/commands/stream-prep.md
 .claude/skills/content-creation
 .claude/skills/story-explanation
-.config/zellij/layouts/videopod.kdl
 {{ end }}
 
 # Skip macOS-only configs on Linux
