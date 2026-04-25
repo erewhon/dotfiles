@@ -11,13 +11,15 @@
  */
 
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
 const HOOKS_DIR = join(homedir(), ".claude", "hooks");
 const TTS_DIR = join(HOOKS_DIR, "utils", "tts");
 const LLM_DIR = join(HOOKS_DIR, "utils", "llm");
+const OPENCODE_STORAGE = join(homedir(), ".local", "share", "opencode", "storage");
+const CHATS_ROOT = join(homedir(), "code", "chats");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -29,17 +31,36 @@ function ensureDir(dir) {
   }
 }
 
-function appendJsonLog(logPath, entry) {
-  let data = [];
-  if (existsSync(logPath)) {
+// Why: full cwd path (with `/` -> `_`) keeps worktrees and same-named
+// repos in different parents from colliding.
+function chatsDirFor(cwd) {
+  const sanitized = cwd.replace(/^\/+/, "").replace(/\//g, "_") || "root";
+  const target = join(CHATS_ROOT, sanitized);
+  ensureDir(target);
+  return target;
+}
+
+function timestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+}
+
+// Read all message files for a session from OpenCode's on-disk storage,
+// sorted by filename (monotonic msg id).
+function readSessionMessages(sessionId) {
+  const dir = join(OPENCODE_STORAGE, "message", sessionId);
+  if (!existsSync(dir)) return [];
+  const files = readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
+  const messages = [];
+  for (const f of files) {
     try {
-      data = JSON.parse(readFileSync(logPath, "utf-8"));
+      messages.push(JSON.parse(readFileSync(join(dir, f), "utf-8")));
     } catch {
-      data = [];
+      // skip malformed
     }
   }
-  data.push(entry);
-  writeFileSync(logPath, JSON.stringify(data, null, 2));
+  return messages;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,46 +144,34 @@ function getCompletionMessage() {
 // ---------------------------------------------------------------------------
 
 export const HooksPlugin = async ({ directory }) => {
-  const logDir = join(directory, "logs");
-
   return {
-    // ----- Stop / session idle: log + TTS completion -----
+    // ----- Stop / session idle: dump full transcript + TTS completion -----
     "session.idle": async ({ session }) => {
       try {
-        ensureDir(logDir);
-        const entry = {
-          event: "session.idle",
-          session_id: session?.id ?? "unknown",
-          timestamp: new Date().toISOString(),
-        };
-        appendJsonLog(join(logDir, "stop.json"), entry);
+        const sessionId = session?.id ?? "unknown";
+        const messages = readSessionMessages(sessionId);
+        if (messages.length > 0) {
+          const targetDir = chatsDirFor(directory);
+          const out = join(targetDir, `opencode_${timestamp()}_${sessionId}.json`);
+          writeFileSync(out, JSON.stringify(messages, null, 2));
+        }
 
-        const message = getCompletionMessage();
-        speak(message);
+        speak(getCompletionMessage());
       } catch {
         // fail silently
       }
     },
 
-    // ----- Pre-compact: back up transcript -----
+    // ----- Pre-compact: snapshot transcript before it's compacted -----
     "experimental.session.compacting": async ({ session }) => {
       try {
-        ensureDir(logDir);
-        const entry = {
-          event: "session.compacting",
-          session_id: session?.id ?? "unknown",
-          timestamp: new Date().toISOString(),
-        };
-        appendJsonLog(join(logDir, "pre_compact.json"), entry);
+        const sessionId = session?.id ?? "unknown";
+        const messages = readSessionMessages(sessionId);
+        if (messages.length === 0) return;
 
-        // Back up session data if available
-        const backupDir = join(logDir, "transcript_backups");
-        ensureDir(backupDir);
-
-        // OpenCode stores session data differently than Claude Code.
-        // We log the compaction event; full transcript backup depends on
-        // session export which may not be available in the hook context.
-        // The log entry serves as a marker for when compaction occurred.
+        const targetDir = chatsDirFor(directory);
+        const out = join(targetDir, `opencode_${timestamp()}_${sessionId}_pre-compact.json`);
+        writeFileSync(out, JSON.stringify(messages, null, 2));
       } catch {
         // fail silently
       }
@@ -171,25 +180,13 @@ export const HooksPlugin = async ({ directory }) => {
     // ----- Notification: TTS when agent asks a question -----
     "message.updated": async ({ message }) => {
       try {
-        // Only fire TTS for assistant messages that contain questions
         if (message?.role !== "assistant") return;
 
-        // Check if the message contains a question to the user
         const text = typeof message.content === "string"
           ? message.content
           : JSON.stringify(message.content ?? "");
 
-        // Simple heuristic: if the last sentence ends with "?" it's a question
-        const lastChars = text.trim().slice(-1);
-        if (lastChars !== "?") return;
-
-        ensureDir(logDir);
-        const entry = {
-          event: "notification",
-          timestamp: new Date().toISOString(),
-          preview: text.slice(0, 200),
-        };
-        appendJsonLog(join(logDir, "notification.json"), entry);
+        if (text.trim().slice(-1) !== "?") return;
 
         const engineerName = (process.env.ENGINEER_NAME ?? "").trim();
         let notification;

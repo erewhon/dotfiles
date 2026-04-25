@@ -20,51 +20,27 @@ except ImportError:
     pass  # dotenv is optional
 
 
-def log_pre_compact(input_data):
-    """Log pre-compact event to logs directory."""
-    # Ensure logs directory exists
-    log_dir = Path("logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / 'pre_compact.json'
-    
-    # Read existing log data or initialize empty list
-    if log_file.exists():
-        with open(log_file, 'r') as f:
-            try:
-                log_data = json.load(f)
-            except (json.JSONDecodeError, ValueError):
-                log_data = []
-    else:
-        log_data = []
-    
-    # Append the entire input data
-    log_data.append(input_data)
-    
-    # Write back to file with formatting
-    with open(log_file, 'w') as f:
-        json.dump(log_data, f, indent=2)
+def chats_dir_for(cwd: str) -> Path:
+    """Return ~/code/chats/<sanitized-cwd>/, creating it if needed."""
+    sanitized = cwd.lstrip('/').replace('/', '_') or 'root'
+    target = Path.home() / 'code' / 'chats' / sanitized
+    target.mkdir(parents=True, exist_ok=True)
+    return target
 
 
-def backup_transcript(transcript_path, trigger):
-    """Create a backup of the transcript before compaction."""
+def backup_transcript(transcript_path, trigger, session_id):
+    """Snapshot the transcript before compaction into ~/code/chats/<project>/."""
     try:
         if not os.path.exists(transcript_path):
-            return
-        
-        # Create backup directory
-        backup_dir = Path("logs") / "transcript_backups"
-        backup_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Generate backup filename with timestamp and trigger type
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_name = Path(transcript_path).stem
-        backup_name = f"{session_name}_pre_compact_{trigger}_{timestamp}.jsonl"
-        backup_path = backup_dir / backup_name
-        
-        # Copy transcript to backup
+            return None
+
+        target_dir = chats_dir_for(os.getcwd())
+        ts = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        backup_path = target_dir / f"claude_{ts}_{session_id}_pre-compact-{trigger}.jsonl"
+
         import shutil
         shutil.copy2(transcript_path, backup_path)
-        
+
         return str(backup_path)
     except Exception:
         return None
@@ -88,14 +64,11 @@ def main():
         transcript_path = input_data.get('transcript_path', '')
         trigger = input_data.get('trigger', 'unknown')  # "manual" or "auto"
         custom_instructions = input_data.get('custom_instructions', '')
-        
-        # Log the pre-compact event
-        log_pre_compact(input_data)
-        
+
         # Create backup if requested
         backup_path = None
         if args.backup and transcript_path:
-            backup_path = backup_transcript(transcript_path, trigger)
+            backup_path = backup_transcript(transcript_path, trigger, session_id)
         
         # Provide feedback based on trigger type
         if args.verbose:
