@@ -1,0 +1,24 @@
+# Machine-specific overrides. First match wins, so settings in these files
+# override the Host * defaults below. Missing files are silently ignored.
+Include ~/.ssh/config.local
+Include ~/.ssh/config.d/*
+
+Host *
+    # Connection multiplexing — reuse a single TCP/auth handshake for repeated
+    # ssh calls to the same host. Huge speedup when tools shell out to ssh a lot.
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-%C
+    ControlPersist 10m
+
+    # Keepalives so idle sessions survive NAT/firewall timeouts
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+
+    # Load keys into ssh-agent the first time they're used
+    AddKeysToAgent yes
+
+    # Trust new host keys on first connection; reject changes
+    StrictHostKeyChecking accept-new
+
+    # Pick up rotated host keys automatically
+    UpdateHostKeys yes
