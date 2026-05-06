@@ -78,6 +78,9 @@ if [[ -f "$ZINIT_HOME/zinit.zsh" ]]; then
     zstyle :omz:plugins:ssh-agent lifetime 4h
     zinit snippet OMZP::ssh-agent
 
+    # OMZ git lib provides git_current_branch (used by ggpull/ggpush etc.)
+    zinit snippet OMZL::git.zsh
+
     # Turbo-loaded omz plugins (aliases & completions)
     zinit wait lucid for \
         OMZP::aws \
