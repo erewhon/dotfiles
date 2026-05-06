@@ -98,6 +98,10 @@ fi
 
 # fzf + ripgrep + bat: fuzzy finders, previews, and pickers
 if command -v fzf &> /dev/null; then
+    # Tab completion + Ctrl-T (file picker) + Alt-C (cd picker).
+    # Ctrl-R is left to atuin (loaded above).
+    source <(fzf --zsh)
+
     alias gitb='git branch | fzf-tmux -d 15'
 
     # Fuzzy preview
