@@ -34,8 +34,14 @@
 [interactive]
      diffFilter = delta --color-only
 
+# Host-local drop-ins (silently ignored if missing). Later wins on conflict,
+# so order is identity → work → host, with host taking final priority.
 [include]
-     path = ~/.gitconfig-local
+     path = ~/.config/git/config.d/00-identity
+[include]
+     path = ~/.config/git/config.d/10-work
+[include]
+     path = ~/.config/git/config.d/20-host
 
 [init]
 	defaultBranch = main
