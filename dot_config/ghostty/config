@@ -16,3 +16,7 @@ window-padding-balance = true
 keybind = shift+enter=text:\n
 
 font-size = 16
+
+# Auto-install xterm-ghostty terminfo on remote hosts when SSH-ing.
+# Avoids "unknown terminal" complaints on machines we can't update.
+shell-integration-features = ssh-terminfo
