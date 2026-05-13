@@ -1,3 +1,15 @@
+# Push local terminfo into ~/.terminfo on a remote host.
+# Ghostty's built-in ssh-terminfo wrapper skips hosts that already have *some*
+# xterm-ghostty entry (e.g. a stale linuxbrew copy), so when the remote shows
+# the classic doubling/garbled-cursor symptoms, force-push our local one.
+function term-push() {
+    if [[ -z "$1" ]]; then
+        echo "usage: term-push <host> [terminfo-name]" >&2
+        return 1
+    fi
+    infocmp -x "${2:-${TERM:-xterm-ghostty}}" | ssh "$1" 'tic -x -o ~/.terminfo -'
+}
+
 # Tmux session helpers
 function mux() {
     tmux new-session -A -s $1
