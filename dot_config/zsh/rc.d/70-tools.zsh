@@ -2,6 +2,9 @@
 if command -v bat &> /dev/null; then
     export BAT_THEME=Dracula
     export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+    # groff 1.23+ emits SGR escapes by default, which `col -bx` mangles into
+    # literal "4m...24m" garbage. -c forces legacy overstrike that col handles.
+    export MANROFFOPT="-c"
     alias less=bat
     alias gitd='git diff --name-only --diff-filter=d | xargs bat --diff --show-all'
     function tailf() { tail -f "$@" | bat --paging=never -l log }
@@ -11,6 +14,8 @@ if command -v bat &> /dev/null; then
 elif [[ -f /usr/bin/batcat ]]; then
     export BAT_THEME=Dracula
     export MANPAGER="sh -c 'col -bx | batcat -l man -p'"
+    # See note above: -c keeps groff from emitting SGR that col mangles.
+    export MANROFFOPT="-c"
     alias less=batcat
     alias gitd='git diff --name-only --diff-filter=d | xargs batcat --diff --show-all'
     function tailf() { tail -f "$@" | batcat --paging=never -l log }
