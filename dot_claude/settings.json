@@ -1,4 +1,27 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(upsc *)",
+      "Bash(incus list *)",
+      "Bash(systemctl is-active *)",
+      "Bash(systemctl is-enabled *)",
+      "Bash(systemctl status *)",
+      "Bash(jj status *)",
+      "Bash(jj diff *)",
+      "mcp__nous__query_tasks",
+      "mcp__nous__get_task_spec",
+      "mcp__nous__task_summary",
+      "mcp__nous__search_pages",
+      "mcp__nous__get_page",
+      "mcp__nous__get_database",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "mcp__plugin_claude-mem_mcp-search__get_observations",
+      "mcp__plugin_claude-mem_mcp-search__search",
+      "mcp__gaol__gaol_remote_list_hosts",
+      "mcp__playwright__browser_take_screenshot"
+    ]
+  },
   "hooks": {
     "Stop": [
       {

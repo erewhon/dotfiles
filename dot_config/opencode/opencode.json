@@ -83,12 +83,35 @@
       ],
       "enabled": true
     },
+    "meta-agents": {
+      "type": "local",
+      "command": [
+        "uv",
+        "--directory",
+        "/home/erewhon/Projects/erewhon/meta",
+        "run",
+        "meta-mcp"
+      ],
+      "enabled": true
+    },
     "context7": {
       "type": "local",
       "command": [
         "npx",
         "-y",
         "@upstash/context7-mcp"
+      ],
+      "enabled": true
+    },
+    "llm-router-rag": {
+      "type": "local",
+      "command": [
+        "uv",
+        "--directory",
+        "/home/erewhon/Projects/erewhon/llm-router",
+        "run",
+        "--all-extras",
+        "llm-router-rag-mcp"
       ],
       "enabled": true
     }
