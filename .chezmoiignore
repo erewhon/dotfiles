@@ -35,4 +35,5 @@ README.md
 # Skip macOS-only configs on Linux
 {{ if eq .chezmoi.os "linux" }}
 .config/iterm
+Library/LaunchAgents/org.byrnes.orpheus.plist
 {{ end }}

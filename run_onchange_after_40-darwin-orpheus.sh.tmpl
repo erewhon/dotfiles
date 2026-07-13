@@ -1,0 +1,49 @@
+#!/bin/sh
+# {{ include "Library/LaunchAgents/org.byrnes.orpheus.plist.tmpl" | sha256sum }}
+# macOS/Apple-Silicon only: set up a local Orpheus TTS server (mlx-audio) that
+# `orpheus-say` talks to, and (re)load its launchd LaunchAgent. Re-runs when this
+# script or the plist changes. See github.com/erewhon/llm-router-go
+# docs/orpheus-say-macos.md for the full rationale.
+
+{{ if or (ne .chezmoi.os "darwin") (ne .chezmoi.arch "arm64") -}}
+echo "[40-darwin-orpheus] skipping: not macOS on Apple Silicon"
+exit 0
+{{ else -}}
+
+VENV="$HOME/orpheus/.venv"
+PLIST="$HOME/Library/LaunchAgents/org.byrnes.orpheus.plist"
+LABEL="org.byrnes.orpheus"
+
+if ! command -v uv >/dev/null 2>&1; then
+    echo "[40-darwin-orpheus] uv not found (installed via brew bundle); skipping"
+    exit 0
+fi
+
+echo "[40-darwin-orpheus] setting up mlx-audio venv at $VENV ..."
+mkdir -p "$HOME/orpheus"
+[ -x "$VENV/bin/python" ] || uv venv --python 3.12 "$VENV" || {
+    echo "[40-darwin-orpheus] WARN venv creation failed; skipping"; exit 0; }
+
+# mlx-audio + server extras, THEN pin mlx/mlx-lm last: mlx >= 0.31.2 made GPU
+# streams thread-local, which crashes the server on its first request
+# ("There is no Stream(gpu, 0)"). The 0.31.1 matched pair is the only pre-bug
+# combo mlx-audio still accepts. Never let these get upgraded.
+uv pip install --python "$VENV/bin/python" -U 'mlx-audio[all]' 'setuptools<81' || {
+    echo "[40-darwin-orpheus] WARN mlx-audio install failed; skipping"; exit 0; }
+uv pip install --python "$VENV/bin/python" 'mlx==0.31.1' 'mlx-lm==0.31.1' || {
+    echo "[40-darwin-orpheus] WARN mlx pin failed; skipping"; exit 0; }
+
+echo "[40-darwin-orpheus] (re)loading LaunchAgent $LABEL ..."
+if [ -f "$PLIST" ]; then
+    mkdir -p "$HOME/Library/Logs"
+    launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$PLIST" || {
+        echo "[40-darwin-orpheus] WARN launchctl bootstrap failed"; exit 0; }
+    launchctl kickstart -k "gui/$(id -u)/$LABEL" || true
+    echo "[40-darwin-orpheus] server on http://127.0.0.1:8000 (logs: ~/Library/Logs/orpheus-mlx.log)"
+else
+    echo "[40-darwin-orpheus] WARN $PLIST missing (chezmoi should have applied it)"
+fi
+
+echo "[40-darwin-orpheus] done"
+{{ end -}}
