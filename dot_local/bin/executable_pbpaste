@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# pbpaste — read the clipboard, macOS-style, from Linux.
+#
+# Reads the LOCAL Wayland desktop clipboard via wl-paste. Note this is the
+# host's clipboard, NOT the Mac's: OSC 52 clipboard *read*-back is gated by
+# most terminals (Ghostty included) and unreliable, so wl-paste is the
+# pragmatic default. When driving over SSH, this returns whatever is on
+# delphi's desktop clipboard — which is also where `pbcopy` mirrors, so a
+# pbcopy → pbpaste round-trip on the same host is consistent.
+#
+# Usage: pbpaste | some-command
+set -euo pipefail
+
+if command -v wl-paste >/dev/null 2>&1; then
+  exec wl-paste "$@"
+fi
+
+echo "pbpaste: no wl-paste available (need a Wayland session)" >&2
+exit 1

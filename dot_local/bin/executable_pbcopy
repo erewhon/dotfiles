@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# pbcopy — copy stdin to the clipboard, macOS-style, but from Linux over SSH/tmux.
+#
+# Sends to BOTH sinks so it works however you're attached:
+#   1. The terminal you're driving through (Ghostty on the Mac, or a console
+#      terminal) via an OSC 52 escape sequence — this "follows you", so over
+#      SSH it lands in the Mac clipboard and at the console it lands in that
+#      terminal's clipboard.
+#   2. The local Wayland desktop clipboard via wl-copy, so the host's own
+#      desktop clipboard gets it too (works even from an SSH session when the
+#      tmux server inherited WAYLAND_DISPLAY).
+#
+# Both sinks are best-effort: on a box with no tmux/terminal or no Wayland
+# display, the relevant branch just no-ops.
+#
+# Caveats:
+#   - The receiving terminal must permit clipboard writes. For Ghostty, ensure
+#     `clipboard-write = allow` in its config.
+#   - OSC 52 through tmux is size-limited (tens of KB); very large input may be
+#     truncated on the OSC 52 (Mac) side. The wl-copy side has no such limit.
+#
+# Usage: some-command | pbcopy
+set -euo pipefail
+
+data="$(cat)"
+
+# --- Sink 1: OSC 52 to the attached terminal -------------------------------
+# \e]52;c;<base64>\a  — set clipboard "c" to the base64 payload.
+osc=$'\e]52;c;'"$(printf %s "$data" | base64 | tr -d '\n')"$'\a'
+
+# Inside tmux, wrap in the passthrough DCS so the sequence reaches the outer
+# terminal. Requires `set -g allow-passthrough on` (checked in tmux.conf).
+# The payload has exactly one ESC (the leading one); base64 + BEL contain no
+# other ESC, so doubling that single ESC is all the passthrough needs.
+if [ -n "${TMUX:-}" ]; then
+  osc=$'\ePtmux;\e'"$osc"$'\e\\'
+fi
+
+# Write to the controlling terminal, not stdout, so it works mid-pipeline.
+# Best-effort: if there's no controlling tty (headless, cron, nested pipe with
+# no terminal), the open fails with ENXIO — swallow it and fall through to the
+# Wayland sink rather than aborting under `set -e`.
+{ printf %s "$osc" > /dev/tty; } 2>/dev/null || true
+
+# --- Sink 2: local Wayland desktop clipboard -------------------------------
+if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wl-copy >/dev/null 2>&1; then
+  printf %s "$data" | wl-copy
+fi
