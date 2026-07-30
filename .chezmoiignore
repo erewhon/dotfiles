@@ -35,5 +35,7 @@ README.md
 # Skip macOS-only configs on Linux
 {{ if eq .chezmoi.os "linux" }}
 .config/iterm
-Library/LaunchAgents/org.byrnes.orpheus.plist
+# The whole tree, not just the plist: ignoring only the file still left chezmoi
+# creating an empty ~/Library/LaunchAgents on Linux boxes.
+Library
 {{ end }}

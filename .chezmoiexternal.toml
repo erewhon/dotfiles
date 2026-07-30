@@ -19,3 +19,18 @@
     url = "https://github.com/catppuccin/tmux/archive/v2.1.3.tar.gz"
     exact = true
     stripComponents = 1
+
+# mdview: the read-only markdown viewer (NVIM_APPNAME=mdview, `md` alias).
+# Uses neovim's native pack/ loader rather than a plugin manager, so the two
+# plugins it needs are pinned here. Version-pinned URLs, so no refreshPeriod:
+# these only move when the pin below changes.
+[".config/mdview/pack/plugins/start/catppuccin"]
+    type = "archive"
+    url = "https://github.com/catppuccin/nvim/archive/79e2049a0fdf7ec840f8463fe1d962c94493196b.tar.gz"
+    exact = true
+    stripComponents = 1
+[".config/mdview/pack/plugins/start/render-markdown.nvim"]
+    type = "archive"
+    url = "https://github.com/MeanderingProgrammer/render-markdown.nvim/archive/v8.13.0.tar.gz"
+    exact = true
+    stripComponents = 1

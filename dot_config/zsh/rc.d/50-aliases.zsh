@@ -13,6 +13,10 @@ alias e='emacsclient --no-wait --create-frame'
 alias mc='mc -x'
 alias play=ansible-playbook
 
+# Read-only markdown viewer: a separate nvim config in ~/.config/mdview
+# (rendered headings, TOC with T, zen mode with Z, q to quit).
+alias md='NVIM_APPNAME=mdview nvim -R'
+
 # Git
 alias gdh='git diff HEAD'
 alias gupv='git pull --rebase --autostash -v'
