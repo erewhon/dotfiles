@@ -1,4 +1,13 @@
 {
+  "cleanupPeriodDays": 365,
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
+    "OTEL_METRIC_EXPORT_INTERVAL": "10000"
+  },
   "permissions": {
     "allow": [
       "Bash(upsc *)",
@@ -8,6 +17,8 @@
       "Bash(systemctl status *)",
       "Bash(jj status *)",
       "Bash(jj diff *)",
+      "Bash(git filter-repo *)",
+      "Bash(git-filter-repo *)",
       "mcp__nous__query_tasks",
       "mcp__nous__get_task_spec",
       "mcp__nous__task_summary",
@@ -23,6 +34,19 @@
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/meta themes --brief 2>/dev/null || true",
+            "timeout": 10,
+            "statusMessage": "Loading weekly themes"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",
@@ -76,5 +100,10 @@
       }
     }
   },
+  "effortLevel": "high",
+  "tui": "fullscreen",
+  "skipWorkflowUsageWarning": true,
+  "remoteControlAtStartup": true,
+  "agentPushNotifEnabled": true,
   "mcpServers": {}
 }

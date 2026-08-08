@@ -10,15 +10,49 @@
 - Use prettier for code formatting with Typescript
 - Do not restore, revert, or remove files without asking first
 {{ if $host.is_personal }}
+## Homelab Access & SSO
+
+- When a project needs a **secret**, **internal network access** (NetBird mesh / a `*.bcc.sh` front door), or **single sign-on** (Zitadel), use the shared homelab plumbing — don't roll your own. The full guide is at **`~/Projects/erewhon/homeops/HOMELAB-ACCESS-FOR-AGENTS.md`**: `ho secret` for credentials (`/home/erewhon/.local/bin/ho`), the hub Caddy front door + CoreDNS + NetBird DNS for internal access, and Zitadel OIDC (native or via the shared `oauth2-proxy`) for auth. Read it before standing up auth or exposing a service.
+
 ## Licensing
 
 - Default to AGPL-3.0 for my web-based projects. Reason: AGPL's network-use clause stops third parties from running a hosted version without contributing modifications back, which GPL and permissive licenses don't prevent. If a project needs a different license (e.g. a library meant for wide adoption), ask before deviating.
 
-## Tailscale
+## Nous MCP Tools
 
-- I use **Tailscale Services** (capital-S), the tailnet-level service registry feature — NOT plain `tailscale serve` (single-node HTTP proxy). The confusing part: both are configured through the `tailscale serve` CLI, but Tailscale Services requires the `--service=svc:NAME` flag. When inspecting or modifying my setup, always work with `tailscale serve ... --service=svc:NAME` commands (or `get-config` / `set-config` for the JSON form), never plain `tailscale serve` commands that target a single node. Docs: https://tailscale.com/docs/features/tailscale-services
-- Renaming a Tailscale Service has no single "rename" op: drain the old, clear it, create the new one, then redefine/approve via the admin console in the browser. Always flag the admin-console step to the user before running the CLI sequence.
-- **Tailscale Services have no hairpin routing** — you cannot reach a service from the same host that advertises it. `curl https://foo.peacock-bramble.ts.net/` from the host running svc:foo will time out even when the service is perfectly healthy. To verify a service is up, either test from a different tailnet device, or test the backend directly on `127.0.0.1:<port>`.
+The Nous MCP server (`~/Projects/erewhon/nous/nous-py/nous_mcp/`) is connected to my Claude Code setup and exposes ~50 tools as `mcp__nous__*`. These work in **any project**, not just `nous` itself. Task specs and feature specs across all my projects live in the **Forge** notebook in Nous; status changes happen via Forge tools, not ad-hoc tracking.
+
+### Forge task workflow
+- Read a task: `mcp__nous__get_task_spec(task)` returns metadata, dependency status, and page content in one call. Use `mcp__nous__get_page` for non-task pages (feature specs, design docs).
+- Browse: `mcp__nous__task_summary` (counts), `mcp__nous__query_tasks` (filtered rows), `mcp__nous__get_feature_tasks` (dep-resolved execution order), `mcp__nous__get_next_task` (highest-priority unblocked).
+- Update status: `mcp__nous__update_task_status(task, status, notes=...)` — pass the task name, not a row UUID. It updates Status + Completed date, syncs page tags, fires the webhook, and optionally appends implementation notes. Same call accepts `external_ref`, `execution_mode`, `model_tier`, `estimate`, `complexity`, `task_type`, `max_files`, `requires_tests`.
+- Create: `mcp__nous__create_task(project, title, content, ...)` for tasks; `mcp__nous__create_project(name)` for project setup.
+- Do **not** call `mcp__nous__get_database` on the Project Tasks database — too large; use the targeted query tools above.
+- Do **not** use `mcp__nous__update_database_rows` for tasks — slow path needing a row-UUID lookup. `update_task_status` is the right tool.
+- Do **not** create ad-hoc task tracking internally; all task state lives in Forge.
+
+### High-level helpers — reach for these before low-level tools
+
+The MCP exposes both low-level primitives (`update_database_rows`, `update_page`, etc.) and higher-level helpers that wrap common workflows. Default to the helpers:
+
+| If you want to... | Use | Don't reach for |
+|---|---|---|
+| Mark a task Done / change status | `update_task_status(task, status, notes=...)` | `update_database_rows` after looking up a row UUID |
+| Set Feature/Phase or edit Depends On on an existing task | `update_task_fields(task, feature=..., phase=..., depends_on_add=[...], depends_on_remove=[...])` | `update_database_rows` after looking up a row UUID |
+| Add or remove a tag on a page | `manage_tags(notebook, page, add=..., remove=...)` | `get_page` → edit tags → `update_page` |
+| Edit a single block in a page | `find_block` + `replace_block` / `delete_block` / `insert_after_block` | `update_page` with the whole content rewritten |
+| Toggle / add a checklist item | `toggle_checklist_item`, `add_checklist_item` | hand-rolled block edits |
+| Create a new task | `create_task(project, title, content, priority, ...)` | `create_page` + `add_database_rows` |
+| Create a new project | `create_project(name)` | `create_folder` + manual Project select wiring |
+| Find what to work on next | `get_next_task(project, feature=...)` | `query_tasks` + manual sort |
+| Verify dependency state | `check_dependencies(task)` | parsing `Depends On` cells yourself |
+| Validate dependency refs before filing (incl. cross-project/cross-epic) | `resolve_tasks(refs, project=...)` | guessing titles and hoping they resolve |
+| See what changed recently across all projects | `recent_task_activity(since="12h", ...)` — Done included, transitions annotated | task_summary + repeated query_tasks |
+| Audit all Depends-On cells for typos/comma damage | `lint_dependencies(project=...)` (read-only; repairs via `update_task_fields`) | eyeballing 300+ dep cells |
+| Archive old Done tasks / query archived ones | `archive_tasks(before=..., dry_run=..., archive_pages=True, updated_at_fallback=True)` (also archives the task pages; fallback judges date-less Done rows by updatedAt), `query_tasks(include_archived=True)` | letting the active database grow unbounded |
+| Re-file `Task:` pages that landed at the notebook root | `file_stray_task_pages(dry_run=...)` — matches row → Project → folder | `move_page` one at a time |
+
+When in doubt, every `@mcp.tool()` in `~/Projects/erewhon/nous/nous-py/nous_mcp/server.py` and `workflow.py` is exposed as `mcp__nous__<func_name>` — grep there for the full list.
 
 ## Content Creation
 
