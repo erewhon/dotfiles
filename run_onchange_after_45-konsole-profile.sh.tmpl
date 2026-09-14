@@ -1,0 +1,26 @@
+#!/bin/sh
+# Point Konsole at the chezmoi-managed profile (~/.local/share/konsole/Erewhon.profile).
+# Sets only DefaultProfile via kwriteconfig so Konsole's own state in konsolerc
+# (window sizes, toolbars) isn't clobbered by a managed copy of the whole file.
+
+{{ $host := .host_defaults -}}
+{{ if hasKey .hosts .chezmoi.hostname -}}
+{{   $host = index .hosts .chezmoi.hostname -}}
+{{ end -}}
+
+{{ if and (eq .chezmoi.os "linux") (not (get $host "is_remote")) -}}
+if command -v kwriteconfig6 >/dev/null 2>&1; then
+    kwc=kwriteconfig6
+elif command -v kwriteconfig5 >/dev/null 2>&1; then
+    kwc=kwriteconfig5
+else
+    echo "[45-konsole-profile] skipping: kwriteconfig not found (no KDE)"
+    exit 0
+fi
+
+echo "[45-konsole-profile] setting Konsole default profile..."
+"$kwc" --file konsolerc --group "Desktop Entry" --key DefaultProfile Erewhon.profile
+echo "[45-konsole-profile] done"
+{{ else -}}
+echo "[45-konsole-profile] skipping: not a local Linux desktop"
+{{ end -}}

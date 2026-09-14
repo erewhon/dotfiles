@@ -16,6 +16,7 @@ README.md
 .config/ghostty
 .config/iterm
 .config/wezterm
+.local/share/konsole
 {{ end }}
 
 # Skip personal-only configs on non-personal hosts
@@ -64,4 +65,9 @@ README.md
 # The whole tree, not just the plist: ignoring only the file still left chezmoi
 # creating an empty ~/Library/LaunchAgents on Linux boxes.
 Library
+{{ end }}
+
+# Skip Linux-only configs on macOS
+{{ if eq .chezmoi.os "darwin" }}
+.local/share/konsole
 {{ end }}

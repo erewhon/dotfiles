@@ -152,6 +152,9 @@ brew "stern"
 brew "tuios"
 brew "vcluster"
 
+# Fonts (brew installs font casks on Linux too, into ~/.local/share/fonts)
+cask "font-jetbrains-mono-nerd-font"
+
 {{ if $host.is_personal -}}
 # Personal tools
 brew "erewhon/tap/agent-monitor"
