@@ -23,6 +23,9 @@ README.md
 {{ if not (get $host "is_personal") }}
 .config/opencode
 .local/share/crush
+# pi's provider list points at the home LLM router over the mesh and pulls
+# its key from `ho secret`; neither exists on work hosts.
+.pi/agent/models.json
 .claude/agents/content-researcher.md
 .claude/agents/script-writer.md
 .claude/agents/thumbnail-ideas.md

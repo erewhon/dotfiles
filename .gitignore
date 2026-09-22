@@ -4,8 +4,8 @@
 .crush/
 cc.txt
 
-# pi: never commit provider keys or per-machine state, even via `chezmoi add`.
-dot_pi/agent/models.json
+# pi: never commit credentials or per-machine state, even via `chezmoi add`.
+# (models.json IS managed: its apiKey is a `!ho secret get` command, not a value.)
 dot_pi/agent/auth.json
 dot_pi/agent/models-store.json
 dot_pi/agent/settings.json
