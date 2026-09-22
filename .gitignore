@@ -4,6 +4,13 @@
 .crush/
 cc.txt
 
+# pi: never commit provider keys or per-machine state, even via `chezmoi add`.
+dot_pi/agent/models.json
+dot_pi/agent/auth.json
+dot_pi/agent/models-store.json
+dot_pi/agent/settings.json
+dot_pi/agent/sessions/
+
 # open-mem: Auto-generated folder context files.
 # Uncomment to exclude from version control (recommended for large projects):
 # **/AGENTS.md

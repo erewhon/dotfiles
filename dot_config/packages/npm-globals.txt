@@ -2,3 +2,4 @@
 # One package per line. Comments with #.
 
 typescript
+@earendil-works/pi-coding-agent   # pi coding harness; config lives in ~/.pi/agent
