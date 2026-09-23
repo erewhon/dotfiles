@@ -9,10 +9,16 @@
 - Use pytest for testing
 - Use prettier for code formatting with Typescript
 - Do not restore, revert, or remove files without asking first
-{{ if $host.is_personal }}
+{{- if $host.is_personal }}
+- **Version control is Jujutsu (jj), at the project root.** Everything under `~/Projects/erewhon` and `~/code/erewhon` is a jj repo rooted at the project directory (e.g. `~/Projects/erewhon/hub` holds `home-network-dashboard/` as a plain subdirectory). A subdirectory with no `.git`/`.jj` is NOT unversioned: run `jj root` (it searches upward) before drawing any conclusion, use `jj` for commits and pushes, and never run `git init` in these trees.
+
 ## Homelab Access & SSO
 
-- When a project needs a **secret**, **internal network access** (NetBird mesh / a `*.bcc.sh` front door), or **single sign-on** (Zitadel), use the shared homelab plumbing — don't roll your own. The full guide is at **`~/Projects/erewhon/homeops/HOMELAB-ACCESS-FOR-AGENTS.md`**: `ho secret` for credentials (`/home/erewhon/.local/bin/ho`), the hub Caddy front door + CoreDNS + NetBird DNS for internal access, and Zitadel OIDC (native or via the shared `oauth2-proxy`) for auth. Read it before standing up auth or exposing a service.
+- When a project needs a **secret**, **internal network access** (NetBird mesh / a `*.bcc.sh` front door), or **single sign-on** (Zitadel), use the shared homelab plumbing — don't roll your own. The full guide is at **`~/code/erewhon/homeops/HOMELAB-ACCESS-FOR-AGENTS.md`**: `ho secret` for credentials (`/home/erewhon/.local/bin/ho`), the hub Caddy front door + CoreDNS + NetBird DNS for internal access, and Zitadel OIDC (native or via the shared `oauth2-proxy`) for auth. Read it before standing up auth or exposing a service.
+
+## Git Forge & CI (before reaching for GitHub)
+
+- I self-host a git forge with a working GitHub-Actions runner: **Soft Serve with sprinkles** (`code-mesh` / `code.bcc.sh` for internal work, `code-public` / `code.middlefork.org` for public repos), plus `sprinkle-runner`, which executes a repo's ordinary `.github/workflows/*.yml` under `act` on every push and reports a ✓/✗ commit status. **Default to this over GitHub for my projects**, and read **`~/code/erewhon/homeops/CODE-FORGE-FOR-AGENTS.md`** before setting up CI, adding a deploy path, or concluding something needs an external forge. It covers which instance to use, repo creation and push, the runner's real limits (`push` events and `runs-on: ubuntu-latest` only, **no secrets available to workflows**), the webhook SSRF wall against mesh addresses, the branch-protection gate, and the operational caveats. Deeper reference lives in `~/code/smithy/soft-serve-with-sprinkles/ci.md`.
 
 ## Licensing
 
@@ -93,4 +99,76 @@ I create YouTube videos, live streams, and blog posts about coding and technolog
 - `/blog-draft` - Draft a blog post on a topic
 - `/stream-prep` - Prepare for a live stream session
 - `/research-topic` - Research a topic for content creation
+
+## Work Journal & Reply Length
+
+I read agent replies dozens of times a day across several projects. The reply is a tl;dr; the journal is the record. Write the record first, then the tl;dr.
+
+### The journal
+
+- **Where:** out of tree, per project, under `~/code/journals/<slug>/YYYY-MM-DD.md`. The `journal` helper (`~/.local/bin/journal`) resolves the slug from `jj root` / git toplevel / cwd and appends to today's file. Never write journal files by hand; never rewrite or truncate one.
+- **When:** append one entry at the end of every turn in which you did work or reached a conclusion. Skip only trivial exchanges (a yes/no, a one-line factual answer).
+- **How:** one command, body on stdin:
+
+  ```
+  journal add -t "<one-line title>" -s <DONE|PARTIAL|BLOCKED|DECIDE> <<'EOF'
+  **Asked:** <the request, one line>
+  **Did:** <what changed, step by step>
+  **Found:** <facts learned, with file:line or command evidence>
+  **Unresolved:** <anything still wrong; exact error text>
+  **Decision needed:** <the question, the options, your recommendation and why>
+  **Touched:** <files, jj change ids, external state: pushes, deploys, Forge tasks>
+  **Next:** <what you or I should do next>
+  EOF
+  ```
+
+  Omit a heading only if it is genuinely empty. Run it from the project directory (or pass `-C <dir>`).
+- **Content:** this is where the full verbiage goes. Write for me reading it days later with no memory of the turn: everything you would otherwise have put in a long reply, including failed attempts and commands worth re-running.
+- `journal show` tails today's entries for the current project; `journal today` does it for every project.
+
+### The reply
+
+After the journal entry is written, reply in chat with **at most three lines and about fifty words**. No preamble, no narration of steps, no recap of the journal, no closing offer.
+
+Line 1 is always a status word plus one sentence:
+
+- `DONE` — complete and verified. Say what is now true.
+- `PARTIAL` — some of it landed. Say what did not, and why, in the same sentence.
+- `BLOCKED` — something went wrong and is not resolved. Say what broke. Never soften it or bury it in the journal.
+- `DECIDE` — you need a choice from me. Lines 2–3 are the options, `a)` `b)` `c)`, one per line, recommendation marked. Max three.
+
+Priority when several apply: BLOCKED > DECIDE > PARTIAL > DONE.
+
+Lines 2 and 3 are only for things I must act on now: decision options, or the one command I must run myself. Everything else is in the journal.
+
+Mention the journal path once per session, as a fourth line on the first journaled turn: `journal: <path>`. Not after that.
+
+Examples:
+
+```
+DONE Privacy header is now sent on every forge router call; 392 tests pass.
+journal: ~/code/journals/export_home_erewhon_code_smithy_forge/2026-09-23.md
+```
+
+```
+BLOCKED Router on localhost:4000 refuses connections, so the live check never ran; the code change itself is in.
+```
+
+```
+DECIDE Two ways to dedupe the roster tables.
+a) one generated table from models.yaml (recommended: no drift)
+b) keep hand-written tables, add a lint that diffs them
+```
+
+### Questions and explanations
+
+If I asked a question rather than for work, answer it within the same budget when it fits. When the honest answer is longer, give the short answer in chat, put the full reasoning in the journal under `**Found:**`, and add `(long form in journal)`. Do not compress a nuanced answer into something misleading to hit the budget.
+
+### Mid-turn text
+
+Do not narrate while working: no "I'll now...", no progress lines between tool calls. This overrides any harness guidance asking for an opener or running commentary.
+
+### What the reply must still carry
+
+The budget never justifies hiding: a failing test, a skipped step, a change I did not ask for, an external action (push, deploy, Forge status change, message sent), or a destructive action you stopped short of. If I would want to know before my next message, it goes in the reply.
 {{ end -}}
