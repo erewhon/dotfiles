@@ -1,0 +1,21 @@
+{{- /*
+  Resolve this host's profile as JSON. Precedence, lowest to highest:
+    .host_defaults                 (.chezmoidata.toml)
+    .hosts.<hostname>              (.chezmoidata.toml)
+    .host_overrides                (~/.config/chezmoi/chezmoi.toml [data.host_overrides],
+                                    written by `chezmoi init` from .chezmoi.toml.tmpl)
+  Adds "known": whether the hostname is in the catalog.
+
+  Usage:
+    {{ $host := includeTemplate "host-profile" . | fromJson }}
+    {{ if $host.is_personal }}...{{ end }}
+*/ -}}
+{{- $host := deepCopy .host_defaults -}}
+{{- if hasKey .hosts .chezmoi.hostname -}}
+{{-   range $k, $v := index .hosts .chezmoi.hostname }}{{ $_ := set $host $k $v }}{{ end -}}
+{{- end -}}
+{{- if hasKey . "host_overrides" -}}
+{{-   range $k, $v := .host_overrides }}{{ $_ := set $host $k $v }}{{ end -}}
+{{- end -}}
+{{- $_ := set $host "known" (hasKey .hosts .chezmoi.hostname) -}}
+{{- $host | toJson -}}

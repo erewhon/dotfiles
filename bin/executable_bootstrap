@@ -4,11 +4,49 @@
 # Idempotent — safe to re-run if something fails partway through.
 #
 # Usage (on a fresh machine):
-#   curl -fsSL https://raw.githubusercontent.com/erewhon/dotfiles/main/bin/executable_bootstrap | bash
+#   bash <(curl -fsSL https://raw.githubusercontent.com/erewhon/dotfiles/main/bin/executable_bootstrap) [--home|--work]
 # Or if already cloned:
-#   bash bin/executable_bootstrap
+#   bash bin/executable_bootstrap [--home|--work]
+#
+# Options:
+#   --home   Mark this machine as a home/personal node (home LLM router, Forge,
+#            `ho secret`, personal skills and packages). Persisted in
+#            ~/.config/chezmoi/chezmoi.toml, so `chezmoi update` keeps it.
+#   --work   Explicitly mark it as NOT a home node.
+#   (neither) A host listed in .chezmoidata.toml keeps its catalog value;
+#            an unknown host is asked interactively, defaulting to work.
+#
+# Re-running with --home/--work on an already bootstrapped machine flips the
+# stored answer (it re-renders the chezmoi config; nothing else is re-done).
 
 set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Arguments
+# ---------------------------------------------------------------------------
+HOME_NODE=""   # "", "true" or "false"
+for arg in "$@"; do
+    case "$arg" in
+        --home|--personal) HOME_NODE="true" ;;
+        --work|--not-home) HOME_NODE="false" ;;
+        -h|--help)
+            sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
+            exit 0 ;;
+        *) echo "error: unknown option: $arg (try --help)" >&2; exit 2 ;;
+    esac
+done
+
+# Answers for the prompts in .chezmoi.toml.tmpl. --promptBool is keyed by the
+# prompt text ("home"), and --prompt is what lets a new answer replace a
+# persisted one on re-run.
+CHEZMOI_INIT_ARGS=()
+if [[ -n "$HOME_NODE" ]]; then
+    CHEZMOI_INIT_ARGS+=(--prompt --promptBool "home=${HOME_NODE}")
+elif [[ ! -t 0 ]]; then
+    # No terminal to ask on: take the catalog value / work default rather
+    # than letting chezmoi read the answer from whatever stdin is.
+    CHEZMOI_INIT_ARGS+=(--promptDefaults)
+fi
 
 # ---------------------------------------------------------------------------
 # Color / formatting
@@ -154,9 +192,12 @@ fi
 step "chezmoi init..."
 
 if [[ -d "$HOME/.local/share/chezmoi" ]]; then
+    # Source already cloned: (re)render only the config so a --home/--work
+    # answer still lands.
+    chezmoi init "${CHEZMOI_INIT_ARGS[@]}"
     skip_msg
 else
-    chezmoi init erewhon/dotfiles
+    chezmoi init "${CHEZMOI_INIT_ARGS[@]}" erewhon/dotfiles
     done_msg
 fi
 
@@ -191,7 +232,10 @@ fi
 # Summary
 # ---------------------------------------------------------------------------
 echo
-echo "${BOLD}Setup complete!${RESET} Next steps:"
+HOST_ROLE=$(chezmoi execute-template '{{ if (includeTemplate "host-profile" . | fromJson).is_personal }}home node{{ else }}work/remote node{{ end }}' 2>/dev/null || echo "unknown")
+echo "${BOLD}Setup complete!${RESET} This machine is configured as a ${BOLD}${HOST_ROLE}${RESET}"
+echo "  (change with: bootstrap --home | --work, or chezmoi init --prompt --promptBool home=true)"
+echo "Next steps:"
 echo "  - Log out and back in (or run: ${BOLD}exec zsh${RESET})"
 echo "  - In tmux, press ${BOLD}prefix + I${RESET} to install plugins"
 if [[ ! -f "$KEY_FILE" ]]; then

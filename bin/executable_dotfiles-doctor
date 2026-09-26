@@ -51,8 +51,9 @@ HOST_PROFILE=""   # JSON object with resolved flags
 resolve_host_profile() {
     if [ -n "$HOST_PROFILE" ]; then return; fi
     command -v chezmoi &>/dev/null || return 0
-    # chezmoi execute-template has access to .chezmoidata.toml values
-    local tmpl='{{ $h := .chezmoi.hostname }}{{ $prof := .host_defaults }}{{ if hasKey .hosts $h }}{{ $prof = index .hosts $h }}{{ end }}{ "known": {{ if hasKey .hosts $h }}true{{ else }}false{{ end }}, "is_remote": {{ $prof.is_remote }}, "has_gui": {{ $prof.has_gui }}, "has_brew": {{ $prof.has_brew }}, "has_apt": {{ $prof.has_apt }}, "has_dnf": {{ $prof.has_dnf }}, "is_personal": {{ $prof.is_personal }} }'
+    # Same resolution the dotfiles use: .chezmoitemplates/host-profile merges
+    # host_defaults < hosts.<hostname> < [data.host_overrides] (chezmoi.toml).
+    local tmpl='{{ includeTemplate "host-profile" . }}'
     HOST_PROFILE=$(chezmoi execute-template "$tmpl" 2>/dev/null) || HOST_PROFILE=""
 }
 
@@ -94,6 +95,14 @@ check_host_identity() {
         pass "Host '$hostname' recognized in .chezmoidata.toml"
     else
         warn "Host '$hostname' not in .chezmoidata.toml — using defaults"
+    fi
+
+    local overrides
+    overrides=$(chezmoi data 2>/dev/null | jq -c '.host_overrides // empty' 2>/dev/null) || overrides=""
+    if [ -n "$overrides" ]; then
+        pass "Per-machine overrides in chezmoi.toml: $overrides"
+    elif [[ "$known" != "true" ]]; then
+        warn "No [data.host_overrides] in chezmoi.toml — run 'bootstrap --home' or 'chezmoi init --prompt' to classify this host"
     fi
 
     local flags=("is_remote" "has_gui" "has_brew" "has_apt" "has_dnf" "is_personal")

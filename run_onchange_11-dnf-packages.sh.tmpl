@@ -2,10 +2,7 @@
 # {{ include "dot_config/packages/dnf-packages.txt" | sha256sum }}
 # Install Fedora packages when dnf-packages.txt changes.
 
-{{ $host := .host_defaults -}}
-{{ if hasKey .hosts .chezmoi.hostname -}}
-{{   $host = index .hosts .chezmoi.hostname -}}
-{{ end -}}
+{{ $host := includeTemplate "host-profile" . | fromJson -}}
 
 {{ if not (get $host "has_dnf") -}}
 echo "[11-dnf-packages] skipping: host has no dnf"

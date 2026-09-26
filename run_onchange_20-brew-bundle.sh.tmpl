@@ -2,10 +2,7 @@
 # {{ include "dot_config/Brewfile.tmpl" | sha256sum }}
 # Run brew bundle when Brewfile changes.
 
-{{ $host := .host_defaults -}}
-{{ if hasKey .hosts .chezmoi.hostname -}}
-{{   $host = index .hosts .chezmoi.hostname -}}
-{{ end -}}
+{{ $host := includeTemplate "host-profile" . | fromJson -}}
 
 {{ if not (get $host "has_brew") -}}
 echo "[20-brew-bundle] skipping: host has no brew"

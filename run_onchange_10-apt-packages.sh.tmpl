@@ -2,10 +2,7 @@
 # {{ include "dot_config/packages/apt-packages.txt" | sha256sum }}
 # Install Debian/Ubuntu packages when apt-packages.txt changes.
 
-{{ $host := .host_defaults -}}
-{{ if hasKey .hosts .chezmoi.hostname -}}
-{{   $host = index .hosts .chezmoi.hostname -}}
-{{ end -}}
+{{ $host := includeTemplate "host-profile" . | fromJson -}}
 
 {{ if not (get $host "has_apt") -}}
 echo "[10-apt-packages] skipping: host has no apt"

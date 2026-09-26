@@ -26,7 +26,7 @@ if [ -n "$used_pct" ]; then
   context_segment=$(printf "ctx:%.0f%%" "$used_pct")
 fi
 
-{{ $host := index .hosts .chezmoi.hostname | default .host_defaults -}}
+{{ $host := includeTemplate "host-profile" . | fromJson -}}
 {{ if $host.is_personal -}}
 # Rate limit segment (personal/home hosts only)
 rate_segment=""

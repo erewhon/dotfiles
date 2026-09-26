@@ -1,0 +1,39 @@
+{{- /*
+  chezmoi config template. `chezmoi init` renders this into
+  ~/.config/chezmoi/chezmoi.toml; it is NOT a managed dotfile.
+
+  Host role is resolved in three layers (see .chezmoitemplates/host-profile):
+    host_defaults  <  hosts.<hostname> (.chezmoidata.toml)  <  data.host_overrides (this file)
+
+  The *Once prompts below persist their answers in the rendered config, so
+  `chezmoi update` / `chezmoi apply` keep using them. To change an answer:
+      chezmoi init --prompt --promptBool home=true      # non-interactive
+      chezmoi init --prompt                             # re-ask
+  (--promptBool is keyed by the prompt text, not the data path.)
+*/ -}}
+{{- $catalog := include ".chezmoidata.toml" | fromToml -}}
+{{- $known := hasKey $catalog.hosts .chezmoi.hostname -}}
+{{- $homeDefault := false -}}
+{{- if $known -}}
+{{-   $homeDefault = get (index $catalog.hosts .chezmoi.hostname) "is_personal" -}}
+{{- end -}}
+{{- $home := promptBoolOnce . "host_overrides.is_personal" "home" $homeDefault -}}
+# Rendered by `chezmoi init` from .chezmoi.toml.tmpl — edit the template, not this file.
+# We want to auto-commit changes. Maybe eventually push.
+encryption = "age"
+
+[git]
+    autoCommit = true
+#   autoPush = true
+
+[age]
+    identity = "~/.config/chezmoi/key.txt"
+    recipient = "age1s0xlqq3jkyl65dgdltqsup3s8mqc4jchkqc4cec5wywlg62wkdfsgv69zl"
+
+# Per-machine answers. These override the host catalog in .chezmoidata.toml,
+# so a host that isn't listed there (a fresh VM) can still be a home node.
+[data.host_overrides]
+    is_personal = {{ $home }}
+    # Package managers are a fact of the box, not a choice: detect them.
+    has_apt = {{ not (not (lookPath "apt-get")) }}
+    has_dnf = {{ not (not (lookPath "dnf")) }}

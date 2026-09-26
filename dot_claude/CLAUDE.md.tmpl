@@ -1,4 +1,4 @@
-{{- $host := index .hosts .chezmoi.hostname | default .host_defaults -}}
+{{- $host := includeTemplate "host-profile" . | fromJson -}}
 ## Development Workflow
 
 - Use "uv" for Python code and "pnpm" for Javascript

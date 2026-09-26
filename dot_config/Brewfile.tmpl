@@ -1,6 +1,6 @@
 # Homebrew Brewfile — managed by chezmoi
 # `brew bundle --file=~/.config/Brewfile`
-{{ $host := .host_defaults }}{{ if hasKey .hosts .chezmoi.hostname }}{{ $host = index .hosts .chezmoi.hostname }}{{ end -}}
+{{ $host := includeTemplate "host-profile" . | fromJson -}}
 
 # Taps
 tap "adembc/tap"

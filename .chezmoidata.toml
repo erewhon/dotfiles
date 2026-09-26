@@ -1,8 +1,11 @@
-# Host classification data for chezmoi templates.
-# Unknown hosts default to safe/minimal (remote, no GUI, no brew).
+# Host classification catalog for chezmoi templates.
+# Unknown hosts fall back to [host_defaults] (remote, non-personal). Either
+# layer can be overridden per machine by [data.host_overrides] in
+# ~/.config/chezmoi/chezmoi.toml, which `chezmoi init` writes from
+# .chezmoi.toml.tmpl (`chezmoi init --promptBool home=true`, or `bootstrap --home`).
 #
-# Usage in templates:
-#   {{ $host := index .hosts .chezmoi.hostname | default .host_defaults }}
+# Usage in templates (never index .hosts directly):
+#   {{ $host := includeTemplate "host-profile" . | fromJson }}
 #   {{ if $host.has_brew }}...{{ end }}
 
 [host_defaults]

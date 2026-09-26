@@ -1,10 +1,7 @@
 README.md
 
-# Host classification: look up current host, fall back to defaults
-{{ $host := .host_defaults }}
-{{ if hasKey .hosts .chezmoi.hostname }}
-{{   $host = index .hosts .chezmoi.hostname }}
-{{ end }}
+# Host classification: defaults < catalog entry < [data.host_overrides] in chezmoi.toml
+{{ $host := includeTemplate "host-profile" . | fromJson }}
 
 # Skip Brewfile on non-brew hosts
 {{ if not (get $host "has_brew") }}

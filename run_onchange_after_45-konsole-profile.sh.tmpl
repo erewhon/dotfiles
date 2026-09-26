@@ -3,10 +3,7 @@
 # Sets only DefaultProfile via kwriteconfig so Konsole's own state in konsolerc
 # (window sizes, toolbars) isn't clobbered by a managed copy of the whole file.
 
-{{ $host := .host_defaults -}}
-{{ if hasKey .hosts .chezmoi.hostname -}}
-{{   $host = index .hosts .chezmoi.hostname -}}
-{{ end -}}
+{{ $host := includeTemplate "host-profile" . | fromJson -}}
 
 {{ if and (eq .chezmoi.os "linux") (not (get $host "is_remote")) -}}
 if command -v kwriteconfig6 >/dev/null 2>&1; then
