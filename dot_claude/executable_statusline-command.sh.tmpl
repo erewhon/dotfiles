@@ -1,70 +1,157 @@
 #!/usr/bin/env bash
 # Claude Code status line script (managed by chezmoi)
+#
+# Line 1: user@host  path  branch  model:effort
+# Line 2: context temperature bar, context %, tokens, rate limits
+#
+# Test with mock input:
+#   echo '{"model":{"display_name":"Opus"},"cwd":"/tmp","context_window":{"used_percentage":37,"total_input_tokens":369000,"context_window_size":1000000}}' | ~/.claude/statusline-command.sh
 
 input=$(cat)
 
-cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd')
-display_cwd="${cwd/#$HOME/\~}"
+# One jq pass. Fields are joined with the unit separator rather than a tab:
+# tab is IFS whitespace, so `read` would collapse empty fields and shift
+# every later value into the wrong variable.
+IFS=$'\x1f' read -r cwd model output_style effort used_pct used_tokens ctx_size \
+  rate_5h resets_5h rate_7d resets_7d < <(
+  echo "$input" | jq -r '[
+    (.workspace.current_dir // .cwd // ""),
+    (.model.display_name // ""),
+    (.output_style.name // ""),
+    (.effort.level // ""),
+    (.context_window.used_percentage // ""),
+    (.context_window.total_input_tokens // ""),
+    (.context_window.context_window_size // ""),
+    (.rate_limits.five_hour.used_percentage // ""),
+    (.rate_limits.five_hour.resets_at // ""),
+    (.rate_limits.seven_day.used_percentage // ""),
+    (.rate_limits.seven_day.resets_at // "")
+  ] | map(tostring) | join("\u001f")'
+)
 
-model=$(echo "$input" | jq -r '.model.display_name // empty')
-output_style=$(echo "$input" | jq -r '.output_style.name // empty')
-used_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
+display_cwd="${cwd/#$HOME/\~}"
+reset=$'\033[0m'
+dim=$'\033[38;5;244m'
+
+# 256-colour ramp, green -> yellow -> red. Index 0 is coolest.
+ramp=(46 82 118 154 190 226 220 214 208 202 196)
+
+# ramp_color PCT -> 256-colour code for that percentage
+ramp_color() {
+  local pct=$1 idx
+  idx=$(( pct * (${#ramp[@]} - 1) / 100 ))
+  [ "$idx" -lt 0 ] && idx=0
+  [ "$idx" -ge "${#ramp[@]}" ] && idx=$(( ${#ramp[@]} - 1 ))
+  printf '%s' "${ramp[$idx]}"
+}
+
+# human_tokens N -> 369k, 1M, 1.5M
+human_tokens() {
+  local n=$1
+  if [ "$n" -ge 1000000 ]; then
+    if [ $(( n % 1000000 )) -eq 0 ]; then
+      printf '%dM' $(( n / 1000000 ))
+    else
+      printf '%d.%dM' $(( n / 1000000 )) $(( (n % 1000000) / 100000 ))
+    fi
+  elif [ "$n" -ge 1000 ]; then
+    printf '%dk' $(( (n + 500) / 1000 ))
+  else
+    printf '%d' "$n"
+  fi
+}
+
+# human_remaining EPOCH -> "2d3h", "4h12m", "9m"; empty if already past
+human_remaining() {
+  local remaining=$(( $1 - $(date +%s) ))
+  [ "$remaining" -le 0 ] && return
+  local days=$(( remaining / 86400 ))
+  local hours=$(( (remaining % 86400) / 3600 ))
+  local mins=$(( (remaining % 3600) / 60 ))
+  if [ "$days" -gt 0 ]; then
+    printf '%dd%dh' "$days" "$hours"
+  elif [ "$hours" -gt 0 ]; then
+    printf '%dh%dm' "$hours" "$mins"
+  else
+    printf '%dm' "$mins"
+  fi
+}
 
 # Build model/style segment
 model_segment=""
 if [ -n "$model" ]; then
+  model_segment="$model"
   if [ -n "$output_style" ] && [ "$output_style" != "default" ] && [ "$output_style" != "Default" ]; then
-    model_segment="$model ($output_style)"
-  else
-    model_segment="$model"
+    model_segment="$model_segment ($output_style)"
   fi
 fi
 
-# Build context segment
+# Build context segment: temperature bar, percentage, tokens used / window
 context_segment=""
 if [ -n "$used_pct" ]; then
-  context_segment=$(printf "ctx:%.0f%%" "$used_pct")
+  pct=$(printf '%.0f' "$used_pct")
+  width=10
+  filled=$(( (pct * width + 50) / 100 ))
+  [ "$pct" -gt 0 ] && [ "$filled" -eq 0 ] && filled=1
+  [ "$filled" -gt "$width" ] && filled=$width
+
+  bar=""
+  for (( i = 0; i < width; i++ )); do
+    if [ "$i" -lt "$filled" ]; then
+      # Each cell takes the colour of its own position, so the bar warms
+      # up left to right instead of changing colour as a whole.
+      bar+=$'\033[38;5;'"$(ramp_color $(( i * 100 / (width - 1) )))m█"
+    else
+      bar+=$'\033[38;5;238m█'
+    fi
+  done
+
+  context_segment="${bar}${reset} "$'\033[1;38;5;'"$(ramp_color "$pct")m${pct}%${reset}"
+  if [ -n "$used_tokens" ] && [ -n "$ctx_size" ] && [ "$ctx_size" -gt 0 ]; then
+    context_segment+=" ${dim}$(human_tokens "$used_tokens")/$(human_tokens "$ctx_size")${reset}"
+  fi
 fi
 
 {{ $host := includeTemplate "host-profile" . | fromJson -}}
 {{ if $host.is_personal -}}
-# Rate limit segment (personal/home hosts only)
-rate_segment=""
-rate_7d=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
-resets_at=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
-if [ -n "$rate_7d" ]; then
-  reset_info=""
-  if [ -n "$resets_at" ]; then
-    now=$(date +%s)
-    remaining=$(( resets_at - now ))
-    if [ "$remaining" -gt 0 ]; then
-      hours=$(( remaining / 3600 ))
-      mins=$(( (remaining % 3600) / 60 ))
-      if [ "$hours" -gt 0 ]; then
-        reset_info=" resets ${hours}h${mins}m"
-      else
-        reset_info=" resets ${mins}m"
-      fi
-    fi
-  fi
-  rate_segment=$(printf "7d:%.0f%%%s" "$rate_7d" "$reset_info")
-fi
+# Rate limit segments (personal/home hosts only)
+# rate_segment LABEL PCT RESETS_AT
+rate_segment() {
+  local label=$1 pct left=""
+  [ -z "$2" ] && return
+  pct=$(printf '%.0f' "$2")
+  [ -n "$3" ] && left=$(human_remaining "$3")
+  printf '%s%s:%s\033[1;38;5;%sm%d%%%s' "$dim" "$label" "$reset" "$(ramp_color "$pct")" "$pct" "$reset"
+  [ -n "$left" ] && printf ' %s↻%s%s' "$dim" "$left" "$reset"
+}
+rate_5h_segment=$(rate_segment 5h "$rate_5h" "$resets_5h")
+rate_7d_segment=$(rate_segment 7d "$rate_7d" "$resets_7d")
 {{ end -}}
 
 # Git branch
 git_branch=""
-if git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1; then
+if [ -n "$cwd" ] && git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1; then
   branch=$(git -C "$cwd" -c gc.auto=0 branch 2>/dev/null | sed -n 's/* \(.*\)/\1/p')
   [ -n "$branch" ] && git_branch=" $branch"
 fi
 
-# Output with per-segment colors
-# green=user@host, cyan=path, yellow=git, white=model, magenta=context, red/yellow=rate limit
-printf "\033[01;32m%s@%s \033[36m%s\033[33m%s\033[0m" \
+# Line 1: green=user@host, cyan=path, yellow=git, white=model, dim=effort
+printf '\033[01;32m%s@%s \033[36m%s\033[33m%s\033[0m' \
   "$(whoami)" "$(hostname -s)" "$display_cwd" "$git_branch"
+if [ -n "$model_segment" ]; then
+  printf '  \033[37m%s\033[0m' "$model_segment"
+  [ -n "$effort" ] && printf '%s:%s%s' "$dim" "$effort" "$reset"
+fi
+printf '\n'
 
-[ -n "$model_segment" ] && printf "  \033[37m%s\033[0m" "$model_segment"
-[ -n "$context_segment" ] && printf "  \033[35m%s\033[0m" "$context_segment"
+# Line 2: meters
+line2="$context_segment"
 {{ if $host.is_personal -}}
-[ -n "$rate_segment" ] && printf "  \033[33;1m%s\033[0m" "$rate_segment"
+for seg in "$rate_5h_segment" "$rate_7d_segment"; do
+  [ -z "$seg" ] && continue
+  [ -n "$line2" ] && line2+="  "
+  line2+="$seg"
+done
 {{ end -}}
+[ -n "$line2" ] && printf '%s\n' "$line2"
+exit 0
