@@ -150,3 +150,10 @@ EOF
        done
     }
 fi
+
+# The `md` markdown viewer in Neovide, for smooth scrolling. Opens its own
+# window and returns the prompt. A function rather than an alias because the
+# files must come before `--`: Neovide drops files passed after it.
+function mdv() {
+    NVIM_APPNAME=mdview neovide --fork "$@" -- -R
+}

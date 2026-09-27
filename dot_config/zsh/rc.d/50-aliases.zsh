@@ -16,6 +16,7 @@ alias play=ansible-playbook
 # Read-only markdown viewer: a separate nvim config in ~/.config/mdview
 # (rendered headings, TOC with T, zen mode with Z, q to quit).
 alias md='NVIM_APPNAME=mdview nvim -R'
+# mdv, the same viewer in Neovide, is a function in 60-functions.zsh.
 
 # Git
 alias gdh='git diff HEAD'

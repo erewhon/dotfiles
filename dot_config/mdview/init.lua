@@ -1,6 +1,7 @@
 -- ~/.config/mdview/init.lua
 -- A read-only markdown viewer. No LSP, no linters, no completion.
--- Launch with:  NVIM_APPNAME=mdview nvim -R file.md
+-- Launch with:  NVIM_APPNAME=mdview nvim -R file.md      (alias: md)
+--         or:  NVIM_APPNAME=mdview neovide file.md -- -R (function: mdv)
 
 --------------------------------------------------------------------
 -- appearance
@@ -17,6 +18,11 @@ vim.o.fillchars = "eob: ,fold: "
 -- = "no") if you'd rather have clickable +/- markers in the gutter.
 vim.o.foldcolumn = "0"
 vim.o.termguicolors = true
+
+-- Neovide only (the `mdv` function). A terminal ignores guifont.
+if vim.g.neovide then
+	vim.o.guifont = "JetBrainsMono Nerd Font Mono:h12"
+end
 
 -- wrapping
 vim.o.wrap = true
