@@ -1,19 +1,24 @@
 /**
  * turn-stats: per-turn timing and token stats.
  *
- * After every assistant response, appends a dim one-line entry to the
+ * After every assistant response, appends a one-line entry to the
  * transcript: end time, wall-clock duration, tokens in/out (+cache),
  * output tokens/sec, and cost. When an agent run finishes (prompt -> final
  * answer, including all tool calls), appends a summary line for the run.
  *
+ * Each field has its own colour, taken from the active theme so light and
+ * dark themes both stay readable. Output speed is coloured by value: red
+ * when slow, yellow in between, green when fast; replies too short to judge
+ * stay neutral.
+ *
  * Entries are session-persisted but never sent to the LLM. In print mode
- * (`pi -p`) the same lines go to stderr instead.
+ * (`pi -p`) the same lines go to stderr instead, uncoloured.
  *
  * `/turnstats` toggles it on/off for the session.
  */
 
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
 const ENTRY = "turn-stats";
@@ -59,13 +64,53 @@ function addUsage(a: Usage, b: Usage): Usage {
 	};
 }
 
-function formatLine(s: TurnStats): string {
+/** Output speed below SLOW is red, below OK is yellow, otherwise green. */
+const SLOW_TPS = 10;
+const OK_TPS = 30;
+/**
+ * Speed is output tokens over wall-clock time, so a short reply is dominated
+ * by time-to-first-token and reads as slow. Below this many output tokens the
+ * figure is shown but not judged.
+ */
+const MIN_JUDGED_TOKENS = 50;
+
+type Segment = { text: string; color: ThemeColor; bold?: boolean };
+
+/** One group per " · " separated field; a group is one or more coloured segments. */
+function segments(s: TurnStats): Segment[][] {
+	const groups: Segment[][] = [];
 	const label = s.kind === "turn" ? `turn ${s.turnIndex}` : `run (${s.turns} turn${s.turns === 1 ? "" : "s"})`;
-	const cache = s.cacheRead || s.cacheWrite ? ` (cache r${fmtTok(s.cacheRead)} w${fmtTok(s.cacheWrite)})` : "";
-	const reasoning = s.reasoning ? ` think ${fmtTok(s.reasoning)}` : "";
-	const tps = s.elapsedMs > 0 && s.output > 0 ? ` · ${(s.output / (s.elapsedMs / 1000)).toFixed(0)} tok/s` : "";
-	const cost = s.cost > 0 ? ` · $${s.cost.toFixed(4)}` : "";
-	return `⏱ ${label} · ended ${fmtTime(s.endedAt)} · ${fmtDur(s.elapsedMs)} · ↑${fmtTok(s.input)}${cache} ↓${fmtTok(s.output)}${reasoning}${tps}${cost} · ${s.model}`;
+	groups.push([{ text: `⏱ ${label}`, color: "accent", bold: s.kind === "run" }]);
+	groups.push([{ text: `ended ${fmtTime(s.endedAt)}`, color: "muted" }]);
+	groups.push([{ text: fmtDur(s.elapsedMs), color: "mdLink" }]);
+
+	const tokens: Segment[] = [{ text: `↑${fmtTok(s.input)}`, color: "syntaxKeyword" }];
+	if (s.cacheRead || s.cacheWrite) tokens.push({ text: ` (cache r${fmtTok(s.cacheRead)} w${fmtTok(s.cacheWrite)})`, color: "dim" });
+	tokens.push({ text: ` ↓${fmtTok(s.output)}`, color: "success" });
+	if (s.reasoning) tokens.push({ text: ` think ${fmtTok(s.reasoning)}`, color: "thinkingText" });
+	groups.push(tokens);
+
+	if (s.elapsedMs > 0 && s.output > 0) {
+		const tps = s.output / (s.elapsedMs / 1000);
+		const color: ThemeColor = s.output < MIN_JUDGED_TOKENS ? "muted" : tps < SLOW_TPS ? "error" : tps < OK_TPS ? "warning" : "success";
+		groups.push([{ text: `${tps.toFixed(0)} tok/s`, color }]);
+	}
+	if (s.cost > 0) groups.push([{ text: `$${s.cost.toFixed(4)}`, color: "warning" }]);
+	groups.push([{ text: s.model, color: "muted" }]);
+	return groups;
+}
+
+function formatLine(s: TurnStats): string {
+	return segments(s)
+		.map((group) => group.map((seg) => seg.text).join(""))
+		.join(" · ");
+}
+
+function formatStyled(s: TurnStats, theme: Theme): string {
+	const paint = (seg: Segment) => (seg.bold ? theme.bold(theme.fg(seg.color, seg.text)) : theme.fg(seg.color, seg.text));
+	return segments(s)
+		.map((group) => group.map(paint).join(""))
+		.join(theme.fg("dim", " · "));
 }
 
 export default function (pi: ExtensionAPI) {
@@ -76,7 +121,7 @@ export default function (pi: ExtensionAPI) {
 	let runUsage = emptyUsage();
 
 	pi.registerEntryRenderer(ENTRY, (entry, _opts, theme) => {
-		return new Text(theme.fg("dim", formatLine(entry.data as TurnStats)), 0, 0);
+		return new Text(formatStyled(entry.data as TurnStats, theme), 0, 0);
 	});
 
 	const emit = (ctx: { hasUI: boolean }, s: TurnStats) => {

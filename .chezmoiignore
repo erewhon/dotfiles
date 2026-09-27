@@ -20,8 +20,9 @@ README.md
 {{ if not (get $host "is_personal") }}
 .config/opencode
 .local/share/crush
-# pi's provider list points at the home LLM router over the mesh and pulls
-# its key from `ho secret`; neither exists on work hosts.
+# pi's models.json holds home-only model overrides. The router provider itself
+# is the llm-router extension, which ships everywhere and reads
+# LLM_ROUTER_BASE_URL / LLM_ROUTER_API_KEY on hosts without `ho secret`.
 .pi/agent/models.json
 .claude/agents/content-researcher.md
 .claude/agents/script-writer.md
