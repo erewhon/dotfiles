@@ -1,6 +1,6 @@
 ---
 name: today
-description: The morning briefing over the weekly themes — where each theme stands, what landed overnight, what's waiting on the user, and one suggested first block. Use when the user says "/today", "what's the plan today", "morning briefing", "what did I say we need to do for <project/job>", or "let's start on <theme>". Read-only over the Weekly Themes database (written by /week) plus Forge task activity. Distinct from /week, which plans and replans; /today never writes theme rows.
+description: The morning briefing over the weekly themes — where each theme stands, what landed overnight, what's waiting on the user, and one suggested first block. Use when the user says "/today", "what's the plan today", "morning briefing", "what did I say we need to do for <project/job>", or "let's start on <theme>". Read-only over the Weekly Themes database (written by /week) plus Forge task activity and the Horizon Backlog (Nous daily notes). Distinct from /week, which plans and replans; /today never writes theme rows and never writes the backlog without an explicit yes.
 ---
 
 # today
@@ -45,6 +45,20 @@ description: The morning briefing over the weekly themes — where each theme st
    non-empty review queue > the highest-priority theme with an unblocked task
    (`get_next_task(project=...)`). Name the concrete task, not the theme. If the user
    says "start on <theme>" instead, resolve it the same way for that theme and go.
+5. **Backlog.** The personal Horizon Backlog (Nous, `mcp__nous__backlog_*`), right after
+   the theme lines. Two reads, no writes:
+   - `backlog_summary()` → open count per horizon (`summary.open_by_horizon`), plus
+     `orphans` (rows with no parent above `today`) and `stale` (untouched past their
+     review date).
+   - `backlog_query(stale=True, limit=5)` → the stale rows by title, oldest touch first.
+   Then the sweep check: `list_daily_notes(notebook=<the "notebook" the summary
+   returned>, limit=3)`; if the most recent note dated before today has no `sweptAt`,
+   its Scratch items haven't been filed — **offer**
+   `backlog_sweep()` in one line and run it only on an explicit yes. Never sweep, touch,
+   or rate a row unprompted; /today reads.
+   Degrade silently: a `backlog_summary` error saying the notebook has no Backlog
+   configured → one line, `Backlog: not configured (Settings → Daily Notes)`, and skip
+   the rest of this step. Daemon down → fold into the general unreachable notice.
 
 ## Section shape (target)
 
@@ -53,6 +67,10 @@ Week of <date> — <n> active themes
 ● <Theme> — <one-line status: outcome progress, overnight landings>
 ● <Theme> — …
   (parked: <theme>; superseded: <theme> — see /week review)
+
+Backlog: <n> today · <n> week · <n> month · <n> year · <n> someday — <n> orphans, <n> stale
+  stale: <title> · <title> · <title>
+  yesterday's Scratch is unswept — say "sweep" to file it
 
 Waiting on you (<n>): <item> · <item>
 
@@ -139,5 +157,9 @@ the usual code-mesh HTTP channel; that's for reading there, never a write path.
 - Suggesting a first block from a blocked or Spec Needed task — `get_next_task` exists
   precisely to avoid this.
 - Writing anything to the themes DB (that's /week's job, including all replans).
+- Running `backlog_sweep` (or any backlog write) because it "obviously" needs doing.
+  Offer once; the user says yes.
+- Letting the Backlog step grow: one summary line, up to five stale titles, one sweep
+  offer. Review happens in the Resurfaced panel, not the briefing.
 - Fabricating a briefing when the daemon is down — say the store is unreachable and
   fall back to `recent_task_activity` alone if it works, or stop cleanly.

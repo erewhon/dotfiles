@@ -45,6 +45,9 @@ README.md
 .claude/skills/nous-diagrams
 .claude/skills/today
 .claude/skills/week
+# Reply-mode toggles for the Work Journal rules, which are personal-only in CLAUDE.md.
+.claude/skills/discuss
+.claude/skills/terse
 # Vendored third-party Cloudflare skills. Large (~2.9MB) and only used on
 # personal projects, so don't ship them to work hosts.
 .claude/skills/agents-sdk

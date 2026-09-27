@@ -15,17 +15,23 @@
 - For jj projects: `jj describe -m "message"` then `jj new` (not `git commit`)
 - For jj push: `jj bookmark set main -r @ && jj git push`
 
+## Language
+
+Always respond in English, including reasoning, code comments, commit messages, and tool arguments.
+
 ## Content Creation
 
 I create YouTube videos, live streams, and blog posts about coding and technology.
 
 ### Voice & Style
+
 - Conversational and direct - like explaining to a curious friend
 - Practical and actionable - focus on what people can use
 - Authentic - share genuine opinions and experiences
 - Curious - show enthusiasm for learning and exploring
 
 ### Avoid
+
 - Clickbait that doesn't deliver
 - Jargon without explanation
 - Filler phrases ("basically", "you know", "like I said")
@@ -33,6 +39,7 @@ I create YouTube videos, live streams, and blog posts about coding and technolog
 - Over-promising or sensationalizing
 
 ### Content Workflow
+
 1. Research topic thoroughly before scripting
 2. Create hook/intro that establishes value upfront
 3. Structure with clear sections and timestamps
@@ -40,11 +47,13 @@ I create YouTube videos, live streams, and blog posts about coding and technolog
 5. End with clear next steps or call-to-action
 
 ### Available Skills
+
 - `content-creation` - Workflows for YouTube, blog posts, and live streams
 - `research` - Multi-source investigation and fact-checking
 - `story-explanation` - Narrative framing of technical concepts
 
 ### Available Agents
+
 - `content-researcher` - Deep topic and competitor research
 - `script-writer` - Full scripts for videos and blog posts
 - `thumbnail-ideas` - Visual concepts for YouTube thumbnails
@@ -52,6 +61,7 @@ I create YouTube videos, live streams, and blog posts about coding and technolog
 - `work-completion-summary` - Concise audio/text summaries of completed work
 
 ### Slash Commands
+
 - `/video-outline` - Quick video structure and script outline
 - `/blog-draft` - Draft a blog post on a topic
 - `/stream-prep` - Prepare for a live stream session

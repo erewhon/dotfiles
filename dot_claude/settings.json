@@ -30,9 +30,11 @@
       "mcp__plugin_claude-mem_mcp-search__get_observations",
       "mcp__plugin_claude-mem_mcp-search__search",
       "mcp__gaol__gaol_remote_list_hosts",
-      "mcp__playwright__browser_take_screenshot"
+      "mcp__playwright__browser_take_screenshot",
+      "Bash(journal *)"
     ]
   },
+  "model": "claude-fable-5-1",
   "hooks": {
     "SessionStart": [
       {
@@ -56,6 +58,15 @@
             "command": "~/.claude/hooks/stop.py --chat"
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -sX POST http://localhost:8070/api/webhook -H 'Content-Type: application/json' -d \"{\\\"session\\\":\\\"$(tmux display-message -p '#{session_name}' 2>/dev/null)\\\",\\\"agent_type\\\":\\\"claude\\\",\\\"status\\\":\\\"idle\\\",\\\"session_id\\\":\\\"$(jq -r '.session_id // empty' 2>/dev/null)\\\"}\" &>/dev/null &"
+          }
+        ]
       }
     ],
     "Notification": [
@@ -67,6 +78,15 @@
             "command": "~/.claude/hooks/notification.py --notify"
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -sX POST http://localhost:8070/api/webhook -H 'Content-Type: application/json' -d \"{\\\"session\\\":\\\"$(tmux display-message -p '#{session_name}' 2>/dev/null)\\\",\\\"agent_type\\\":\\\"claude\\\",\\\"status\\\":\\\"waiting\\\",\\\"hook_event\\\":\\\"Notification\\\",\\\"detail\\\":\\\"$CLAUDE_NOTIFICATION\\\",\\\"session_id\\\":\\\"$(jq -r '.session_id // empty' 2>/dev/null)\\\"}\" &>/dev/null &"
+          }
+        ]
       }
     ],
     "PreCompact": [
@@ -76,6 +96,17 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/pre_compact.py --backup"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -sX POST http://localhost:8070/api/webhook -H 'Content-Type: application/json' -d \"{\\\"session\\\":\\\"$(tmux display-message -p '#{session_name}' 2>/dev/null)\\\",\\\"agent_type\\\":\\\"claude\\\",\\\"status\\\":\\\"running\\\",\\\"detail\\\":\\\"$CLAUDE_TOOL\\\",\\\"session_id\\\":\\\"$(jq -r '.session_id // empty' 2>/dev/null)\\\"}\" &>/dev/null &"
           }
         ]
       }
@@ -101,8 +132,14 @@
     }
   },
   "effortLevel": "high",
+  "modelSettings": {
+    "claude-fable-5": {
+      "effortLevel": "xhigh"
+    }
+  },
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
+  "switchModelsOnFlag": false,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "mcpServers": {}
