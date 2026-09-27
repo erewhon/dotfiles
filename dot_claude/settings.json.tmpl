@@ -1,3 +1,5 @@
+{{- /* Fable is only available at home: the model pin and its effort override are personal-only. */ -}}
+{{- $host := includeTemplate "host-profile" . | fromJson -}}
 {
   "cleanupPeriodDays": 365,
   "env": {
@@ -34,7 +36,9 @@
       "Bash(journal *)"
     ]
   },
+{{- if $host.is_personal }}
   "model": "claude-fable-5-1",
+{{- end }}
   "hooks": {
     "SessionStart": [
       {
@@ -132,11 +136,13 @@
     }
   },
   "effortLevel": "high",
+{{- if $host.is_personal }}
   "modelSettings": {
     "claude-fable-5": {
       "effortLevel": "xhigh"
     }
   },
+{{- end }}
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
   "switchModelsOnFlag": false,
