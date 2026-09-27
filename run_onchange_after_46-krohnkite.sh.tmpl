@@ -1,0 +1,146 @@
+#!/bin/sh
+# Krohnkite (KWin 6 tiling script): settings, companion KWin effects, shortcuts.
+#
+# kwinrc and kglobalshortcutsrc are not managed as whole files: kwinrc holds
+# per-machine output UUIDs under [Tiling], and kglobalshortcutsrc is owned by
+# the shortcut daemon. Only the keys below are set.
+#
+# Krohnkite itself is not installed by this script. Get the .kwinscript from
+# https://codeberg.org/anametologin/Krohnkite/releases and run
+#   kpackagetool6 -t KWin/Script -i <file>
+# The next line changes when that happens, which makes chezmoi re-run this.
+# krohnkite installed: {{ if stat (joinPath .chezmoi.homeDir ".local/share/kwin/scripts/krohnkite/metadata.json") }}yes{{ else }}no{{ end }}
+
+{{ $host := includeTemplate "host-profile" . | fromJson -}}
+
+{{ if and (eq .chezmoi.os "linux") (not (get $host "is_remote")) -}}
+tag="[46-krohnkite]"
+
+if ! command -v kwriteconfig6 >/dev/null 2>&1; then
+    echo "$tag skipping: kwriteconfig6 not found (no Plasma 6)"
+    exit 0
+fi
+if [ ! -f "$HOME/.local/share/kwin/scripts/krohnkite/metadata.json" ]; then
+    echo "$tag skipping: Krohnkite is not installed"
+    exit 0
+fi
+
+# --- Script settings -------------------------------------------------------
+kk() { kwriteconfig6 --file kwinrc --group Script-krohnkite --key "$1" "$2"; }
+
+echo "$tag writing Krohnkite settings..."
+# 10 px padding around every tiled window and next to docks.
+for key in screenGapLeft screenGapRight screenGapTop screenGapBottom screenGapBetween \
+           dockHGap dockVGap dockHEdgeGap dockVEdgeGap; do
+    kk "$key" 10
+done
+# A window alone on a screen takes 97% of it instead of filling it.
+kk soleWindowWidth 97
+kk soleWindowHeight 97
+# No title bar or frame on tiled windows. Meta+drag moves them by mouse.
+kk noTileBorder true
+
+# --- KWin plugins ----------------------------------------------------------
+kp() { kwriteconfig6 --file kwinrc --group Plugins --key "$1" "$2"; }
+
+kp krohnkiteEnabled true
+# Upstream says not to use the Squash minimize animation with Krohnkite.
+kp squashEnabled false
+# Wobbly windows wobbles on every retile.
+kp wobblywindowsEnabled false
+
+# --- Shortcuts -------------------------------------------------------------
+# Krohnkite's defaults collide with Plasma defaults, and KDE silently leaves
+# the colliding Krohnkite actions unbound. Release the keys, then bind them.
+#
+#   Meta+L        Lock Session      -> Krohnkite: Focus Right (lock: Ctrl+Alt+L)
+#   Meta+D        Peek at Desktop   -> Krohnkite: Decrease
+#   Meta+T        Tiles Editor      -> Krohnkite: Tile Layout
+#   Meta+.        Emoji Selector    -> Krohnkite: Focus Next
+#   Meta+R        Spectacle record  -> Krohnkite: Rotate
+#   Meta+Shift+R  Spectacle record  -> Krohnkite: Rotate Part
+
+META=$((0x10000000)); ALT=$((0x08000000)); CTRL=$((0x04000000)); SHIFT=$((0x02000000))
+K_SCREENSAVER=$((0x010000ba))
+
+ga() {
+    busctl --user call org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel "$@"
+}
+
+# bind <component> <action> <component name> <action name> [keycode ...]
+# No keycodes means unbound.
+bind() {
+    comp=$1; action=$2; cname=$3; aname=$4; shift 4
+    if [ $# -eq 0 ]; then
+        set -- 0
+    fi
+    args="$#"
+    for code in "$@"; do
+        args="$args 4 $code 0 0 0"
+    done
+    # shellcheck disable=SC2086
+    ga setForeignShortcutKeys 'asa(ai)' 4 "$comp" "$action" "$cname" "$aname" $args >/dev/null ||
+        echo "$tag warning: could not set $cname / $aname"
+}
+
+kwin_reload() {
+    if command -v qdbus6 >/dev/null 2>&1; then
+        qdbus6 org.kde.KWin /KWin org.kde.KWin.reconfigure >/dev/null 2>&1
+    fi
+}
+
+if command -v busctl >/dev/null 2>&1 &&
+   busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
+    # A Plasma session is running. The shortcut daemon owns the file, so go
+    # through it. Make sure Krohnkite has registered its actions first.
+    kwin_reload
+    if command -v qdbus6 >/dev/null 2>&1; then
+        loaded=$(qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.isScriptLoaded krohnkite 2>/dev/null)
+        if [ "$loaded" = "true" ]; then
+            echo "$tag Krohnkite is already running: log out and in to apply changed settings"
+        else
+            qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.start >/dev/null 2>&1
+            sleep 2
+        fi
+    fi
+
+    echo "$tag setting shortcuts through the shortcut daemon..."
+    bind ksmserver "Lock Session" "Session Management" "Lock Session" \
+        $((CTRL + ALT + 0x4C)) "$K_SCREENSAVER"
+    bind kwin "Show Desktop" KWin "Peek at Desktop"
+    bind kwin "Edit Tiles" KWin "Toggle Tiles Editor"
+    bind org.kde.plasma.emojier.desktop _launch "Emoji Selector" "Emoji Selector" \
+        $((META + CTRL + ALT + SHIFT + 0x20))
+    bind org.kde.spectacle.desktop RecordRegion Spectacle "Record Rectangular Region"
+
+    bind kwin KrohnkiteFocusRight KWin "Krohnkite: Focus Right" $((META + 0x4C))
+    bind kwin KrohnkiteDecrease KWin "Krohnkite: Decrease" $((META + 0x44))
+    bind kwin KrohnkiteTileLayout KWin "Krohnkite: Tile Layout" $((META + 0x54))
+    bind kwin KrohnkiteFocusNext KWin "Krohnkite: Focus Next" $((META + 0x2E))
+    bind kwin KrohnkiteRotate KWin "Krohnkite: Rotate" $((META + 0x52))
+    bind kwin KrohnkiteRotatePart KWin "Krohnkite: Rotate Part" $((META + SHIFT + 0x52))
+else
+    # No session: nothing owns the file, so write it. Read at next login.
+    echo "$tag no Plasma session: writing kglobalshortcutsrc for the next login..."
+    tab=$(printf '\t')
+    ks() { kwriteconfig6 --file kglobalshortcutsrc --group "$1" --key "$2" "$3"; }
+    svc() { kwriteconfig6 --file kglobalshortcutsrc --group services --group "$1" --key "$2" "$3"; }
+
+    ks ksmserver "Lock Session" "Ctrl+Alt+L${tab}Screensaver,Meta+L${tab}Screensaver,Lock Session"
+    ks kwin "Show Desktop" "none,Meta+D,Peek at Desktop"
+    ks kwin "Edit Tiles" "none,Meta+T,Toggle Tiles Editor"
+    svc org.kde.plasma.emojier.desktop _launch "Meta+Ctrl+Alt+Shift+Space"
+    svc org.kde.spectacle.desktop RecordRegion "none"
+
+    ks kwin KrohnkiteFocusRight "Meta+L,none,Krohnkite: Focus Right"
+    ks kwin KrohnkiteDecrease "Meta+D,none,Krohnkite: Decrease"
+    ks kwin KrohnkiteTileLayout "Meta+T,none,Krohnkite: Tile Layout"
+    ks kwin KrohnkiteFocusNext "Meta+.,none,Krohnkite: Focus Next"
+    ks kwin KrohnkiteRotate "Meta+R,none,Krohnkite: Rotate"
+    ks kwin KrohnkiteRotatePart "Meta+Shift+R,none,Krohnkite: Rotate Part"
+fi
+
+echo "$tag done"
+{{ else -}}
+echo "[46-krohnkite] skipping: not a local Linux desktop"
+{{ end -}}

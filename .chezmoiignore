@@ -12,6 +12,7 @@ README.md
 {{ if get $host "is_remote" }}
 .config/ghostty
 .config/iterm
+.config/kitty
 .config/wezterm
 .local/share/konsole
 {{ end }}
