@@ -2,7 +2,8 @@
 # SketchyBar: a small floating bar in the Breeze palette.
 #
 #   left   logo, front app
-#   right  clock, battery (laptops only), volume, network
+#   right  clock, battery (laptops only), volume, network, up/down rate,
+#          JetBrains Toolbox launcher
 #
 # No Spaces indicators and no media player, on purpose.
 #
@@ -84,7 +85,19 @@ sketchybar --add item clock right \
            --set network update_freq=30 \
                          script="$PLUGIN_DIR/network.sh" \
                          click_script="open 'x-apple.systempreferences:com.apple.Network-Settings.extension'" \
-           --subscribe network wifi_change system_woke
+           --subscribe network wifi_change system_woke \
+           --add item netspeed right \
+           --set netspeed update_freq=2 \
+                          icon.drawing=off \
+                          label.font="$FONT:Medium:12.0" \
+                          label.padding_left=8 \
+                          script="$PLUGIN_DIR/netspeed.sh" \
+           --subscribe netspeed system_woke \
+           --add item toolbox right \
+           --set toolbox icon= \
+                         icon.padding_right=8 \
+                         label.drawing=off \
+                         click_script="open -a 'JetBrains Toolbox'"
 
 ##### Run every script once #####
 sketchybar --update
