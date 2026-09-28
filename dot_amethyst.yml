@@ -1,8 +1,8 @@
 # Amethyst: dynamic tiling for macOS, set up to feel like Krohnkite on the
 # Linux boxes. Restart Amethyst after editing (Option+Shift+Ctrl+Z).
 #
-# Only settings that differ from Amethyst's defaults are listed. Repeating a
-# default can stop it from working (Amethyst issue 1419).
+# Key bindings are listed only where they differ from Amethyst's defaults.
+# Repeating a default binding can stop it from working (Amethyst issue 1419).
 #
 # Modifiers are Amethyst's defaults, because Cmd+letter belongs to apps:
 #   mod1 = Option+Shift          (Krohnkite: Meta)
@@ -92,15 +92,28 @@ window-margin-size: 10
 screen-padding-left: 5
 screen-padding-right: 5
 screen-padding-bottom: 5
-# Room for SketchyBar: bar height 34 + offset 6, plus the 5 px edge gap.
-# Assumes the native menu bar is hidden. Keep in step with sketchybarrc.
-screen-padding-top: 45
+# Room for SketchyBar, which ends 40 px from the top (offset 6 + height 34).
+# Measured on the notched MacBook: Amethyst's usable area starts 32 px down,
+# below the menu bar band. A window's top edge lands at
+#   32 + 5 (half margin) + this value + 5 (half margin)
+# so 13 puts it at 55, a 15 px gap under the bar, the same as the sides.
+# This one value applies to every screen: an external display without a
+# notch would need about 45.
+screen-padding-top: 13
 
 # --- Mouse ------------------------------------------------------------------
 # Drag a window onto another to swap them; resizing by mouse adjusts the layout.
 
 mouse-swaps-windows: true
 mouse-resizes-windows: true
+
+# Focus follows mouse buries floating windows: opening a dropdown in System
+# Settings moves focus to the tiled window underneath (Amethyst issues 1026,
+# 1243). Set explicitly, because Amethyst otherwise keeps whatever value it
+# stored earlier. The toggle hotkey is disabled so it cannot come back by
+# accident.
+focus-follows-mouse: false
+toggle-focus-follows-mouse: false
 
 # --- Floating apps ----------------------------------------------------------
 # Bundle identifiers that should never tile. Find one with:
