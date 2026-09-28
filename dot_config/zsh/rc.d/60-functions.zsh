@@ -73,6 +73,49 @@ gship() {
     gh pr merge --auto --squash --delete-branch
 }
 
+# Name the terminal tab after the ssh target.
+#
+# Kitty's shell integration titles the tab with the whole command line as
+# typed, and a long-lived ssh or autossh never resets it. These wrappers run
+# after that preexec hook, so the title they send wins. The integration's
+# precmd hook puts the directory title back when the session ends.
+function _ssh_tab_title {
+    [[ -w /dev/tty ]] || return 0
+    local target
+    # "ssh -G" parses the arguments and ssh config, then prints the result
+    # without connecting. "host" is the name as typed; older OpenSSH prints
+    # only "hostname".
+    target=$(command ssh -G "$@" 2>/dev/null </dev/null | awk '
+        $1 == "host"     { host = $2 }
+        $1 == "hostname" { hostname = $2 }
+        END              { print (host != "" ? host : hostname) }')
+    [[ -n "$target" ]] || return 0
+    { printf '\e]2;%s\a' "$target" > /dev/tty } 2>/dev/null
+    return 0
+}
+
+function ssh {
+    _ssh_tab_title "$@"
+    command ssh "$@"
+}
+
+function autossh {
+    # -M and its port belong to autossh. Everything else is passed to ssh.
+    local -a ssh_args
+    local skip=0 arg
+    for arg in "$@"; do
+        if (( skip )); then
+            skip=0
+        elif [[ "$arg" == -M ]]; then
+            skip=1
+        elif [[ "$arg" != -M* ]]; then
+            ssh_args+=("$arg")
+        fi
+    done
+    _ssh_tab_title "${ssh_args[@]}"
+    command autossh "$@"
+}
+
 function autotmux {
     autossh -M 0 -t $1 'tmux -2 attach -d'
 }
