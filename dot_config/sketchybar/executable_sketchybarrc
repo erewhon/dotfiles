@@ -1,0 +1,90 @@
+#!/bin/bash
+# SketchyBar: a small floating bar in the Breeze palette.
+#
+#   left   logo, front app
+#   right  clock, battery (laptops only), volume, network
+#
+# No Spaces indicators and no media player, on purpose.
+#
+# Assumes the native menu bar is hidden:
+#   System Settings > Control Centre > Automatically hide and show the menu bar > Always
+# ~/.amethyst.yml reserves room for this bar with screen-padding-top. If you
+# change BAR_HEIGHT or BAR_OFFSET, change that value too.
+#
+# Try a property live before saving it here, for example:
+#   sketchybar --bar height=30
+# Reload after editing:
+#   sketchybar --reload
+
+source "$CONFIG_DIR/colors.sh"
+PLUGIN_DIR="$CONFIG_DIR/plugins"
+
+FONT="JetBrainsMono Nerd Font"
+BAR_HEIGHT=34
+BAR_OFFSET=6
+
+##### Bar #####
+sketchybar --bar position=top \
+                 height=$BAR_HEIGHT \
+                 y_offset=$BAR_OFFSET \
+                 margin=10 \
+                 corner_radius=10 \
+                 blur_radius=30 \
+                 color=$BAR_BG \
+                 padding_left=8 \
+                 padding_right=8
+
+##### Defaults for every item #####
+default=(
+  padding_left=4
+  padding_right=4
+  icon.font="$FONT:Bold:16.0"
+  label.font="$FONT:Medium:13.0"
+  icon.color=$FG
+  label.color=$FG
+  icon.padding_left=8
+  icon.padding_right=4
+  label.padding_left=4
+  label.padding_right=8
+  background.color=$ITEM_BG
+  background.corner_radius=7
+  background.height=24
+)
+sketchybar --default "${default[@]}"
+
+##### Left #####
+sketchybar --add item logo left \
+           --set logo icon= \
+                      icon.color=$ACCENT \
+                      icon.padding_right=8 \
+                      label.drawing=off \
+                      click_script="open -a 'System Settings'" \
+           --add item front_app left \
+           --set front_app icon.drawing=off \
+                           label.padding_left=10 \
+                           label.font="$FONT:Bold:13.0" \
+                           script="$PLUGIN_DIR/front_app.sh" \
+           --subscribe front_app front_app_switched
+
+##### Right (added right to left) #####
+sketchybar --add item clock right \
+           --set clock update_freq=10 \
+                       icon= \
+                       icon.color=$ACCENT \
+                       script="$PLUGIN_DIR/clock.sh" \
+           --add item battery right \
+           --set battery update_freq=120 \
+                         script="$PLUGIN_DIR/battery.sh" \
+           --subscribe battery system_woke power_source_change \
+           --add item volume right \
+           --set volume script="$PLUGIN_DIR/volume.sh" \
+                        click_script="open 'x-apple.systempreferences:com.apple.Sound-Settings.extension'" \
+           --subscribe volume volume_change \
+           --add item network right \
+           --set network update_freq=30 \
+                         script="$PLUGIN_DIR/network.sh" \
+                         click_script="open 'x-apple.systempreferences:com.apple.Network-Settings.extension'" \
+           --subscribe network wifi_change system_woke
+
+##### Run every script once #####
+sketchybar --update

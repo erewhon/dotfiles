@@ -1,0 +1,113 @@
+# Amethyst: dynamic tiling for macOS, set up to feel like Krohnkite on the
+# Linux boxes. Restart Amethyst after editing (Option+Shift+Ctrl+Z).
+#
+# Only settings that differ from Amethyst's defaults are listed. Repeating a
+# default can stop it from working (Amethyst issue 1419).
+#
+# Modifiers are Amethyst's defaults, because Cmd+letter belongs to apps:
+#   mod1 = Option+Shift          (Krohnkite: Meta)
+#   mod2 = Ctrl+Option+Shift     (Krohnkite: Meta+Shift)
+#
+#   Key            Action                      Krohnkite equivalent
+#   mod1+J / K     focus along the stack       Meta+J / K
+#   mod1+H / L     shrink / grow main pane     Meta+Ctrl+H / L
+#   mod2+J / K     move window along stack     Meta+Shift+J / K
+#   mod2+H / L     move window to next screen  Meta+Shift+H / L
+#   mod1+Return    swap with main              Meta+Return
+#   mod1+I / D     more / fewer main windows   Meta+I / D
+#   mod1+F         toggle float                Meta+F
+#   mod1+T         tall layout                 Meta+T
+#   mod1+M         fullscreen (monocle)        Meta+M
+#   mod1+R         wide layout (tall, rotated) Meta+R
+#   mod1+Space     next layout                 Meta+\
+#   mod2+Space     previous layout             Meta+|
+#   mod1+, / .     focus previous/next screen  (dwm convention)
+#   mod2+M         focus main window
+#   mod2+I         show current layout name
+#
+# Amethyst has no directional focus, so H and L resize instead of moving
+# focus left and right. If J and K feel reversed, swap focus-ccw and focus-cw.
+
+layouts:
+  - tall
+  - wide
+  - fullscreen
+  - column
+  - bsp
+
+# --- Keys that differ from the defaults ------------------------------------
+
+increase-main:
+  mod: mod1
+  key: i
+
+decrease-main:
+  mod: mod1
+  key: d
+
+toggle-float:
+  mod: mod1
+  key: f
+
+select-tall-layout:
+  mod: mod1
+  key: t
+
+select-fullscreen-layout:
+  mod: mod1
+  key: m
+
+select-wide-layout:
+  mod: mod1
+  key: r
+
+focus-screen-ccw:
+  mod: mod1
+  key: ','
+
+focus-screen-cw:
+  mod: mod1
+  key: '.'
+
+# Moved out of the way of the keys above.
+focus-main:
+  mod: mod2
+  key: m
+
+display-current-layout:
+  mod: mod2
+  key: i
+
+select-column-layout:
+  mod: mod2
+  key: c
+
+# --- Gaps -------------------------------------------------------------------
+# Krohnkite uses 10 px everywhere. Amethyst splits the margin between
+# neighbours, so these are a starting point to tune by eye.
+
+window-margins: true
+window-margin-size: 10
+
+screen-padding-left: 5
+screen-padding-right: 5
+screen-padding-bottom: 5
+# Room for SketchyBar: bar height 34 + offset 6, plus the 5 px edge gap.
+# Assumes the native menu bar is hidden. Keep in step with sketchybarrc.
+screen-padding-top: 45
+
+# --- Mouse ------------------------------------------------------------------
+# Drag a window onto another to swap them; resizing by mouse adjusts the layout.
+
+mouse-swaps-windows: true
+mouse-resizes-windows: true
+
+# --- Floating apps ----------------------------------------------------------
+# Bundle identifiers that should never tile. Find one with:
+#   osascript -e 'id of app "App Name"'
+
+floating:
+  - com.apple.systempreferences
+  - com.apple.calculator
+  - com.apple.ActivityMonitor
+  - com.1password.1password
