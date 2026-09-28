@@ -118,7 +118,12 @@ fi
 # rate_segment LABEL PCT RESETS_AT
 rate_segment() {
   local label=$1 pct left=""
-  [ -z "$2" ] && return
+  # Claude Code sends no rate limits until the first response of a session.
+  # Show a placeholder so the gap reads as pending, not broken.
+  if [ -z "$2" ]; then
+    printf '%s%s:--%s' "$dim" "$label" "$reset"
+    return
+  fi
   pct=$(printf '%.0f' "$2")
   [ -n "$3" ] && left=$(human_remaining "$3")
   printf '%s%s:%s\033[1;38;5;%sm%d%%%s' "$dim" "$label" "$reset" "$(ramp_color "$pct")" "$pct" "$reset"
