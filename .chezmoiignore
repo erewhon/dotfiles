@@ -1,5 +1,14 @@
 README.md
 
+# Machine state, not configuration. Never manage these, even via `chezmoi add`.
+# Shell history belongs to the host it was typed on.
+.config/zsh/.zsh_history
+# lazy.nvim rewrites the lockfile on every plugin update, so a tracked copy is
+# always stale and an apply would roll plugins back.
+**/lazy-lock.json
+**/.DS_Store
+**/*.backup
+
 # Host classification: defaults < catalog entry < [data.host_overrides] in chezmoi.toml
 {{ $host := includeTemplate "host-profile" . | fromJson }}
 

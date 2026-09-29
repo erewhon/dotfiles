@@ -14,3 +14,12 @@ dot_pi/agent/sessions/
 # open-mem: Auto-generated folder context files.
 # Uncomment to exclude from version control (recommended for large projects):
 # **/AGENTS.md
+
+# Machine state and editor or Finder leftovers. See .chezmoiignore.
+.DS_Store
+*.backup
+dot_config/zsh/private_dot_zsh_history
+lazy-lock.json
+
+# open-mem: per-machine memory database.
+.open-mem/
