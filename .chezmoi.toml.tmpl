@@ -8,16 +8,34 @@
   The *Once prompts below persist their answers in the rendered config, so
   `chezmoi update` / `chezmoi apply` keep using them. To change an answer:
       chezmoi init --prompt --promptBool home=true      # non-interactive
+      chezmoi init --prompt --promptBool remote=false   # a desk, not a server
       chezmoi init --prompt                             # re-ask
   (--promptBool is keyed by the prompt text, not the data path.)
+
+  "remote" = a box you only reach over ssh. Answering false marks a machine
+  you sit at, which gets the terminal emulators, sketchybar and the KDE
+  desktop setup. It is a prompt rather than a catalog entry so that a work
+  machine can get the desktop configs without its hostname being committed
+  to this public repo.
 */ -}}
 {{- $catalog := include ".chezmoidata.toml" | fromToml -}}
 {{- $known := hasKey $catalog.hosts .chezmoi.hostname -}}
 {{- $homeDefault := false -}}
+{{- /* Unknown Macs are assumed to be sat at; unknown Linux boxes are assumed to be servers. */ -}}
+{{- $remoteDefault := ne .chezmoi.os "darwin" -}}
 {{- if $known -}}
-{{-   $homeDefault = get (index $catalog.hosts .chezmoi.hostname) "is_personal" -}}
+{{-   $entry := index $catalog.hosts .chezmoi.hostname -}}
+{{-   $homeDefault = get $entry "is_personal" -}}
+{{-   if hasKey $entry "is_remote" }}{{ $remoteDefault = get $entry "is_remote" }}{{ end -}}
+{{- end -}}
+{{- /* `--prompt` re-asks every *Once prompt, so when flipping one answer the
+       other should default to what is already stored, not to the catalog. */ -}}
+{{- if hasKey . "host_overrides" -}}
+{{-   if hasKey .host_overrides "is_personal" }}{{ $homeDefault = .host_overrides.is_personal }}{{ end -}}
+{{-   if hasKey .host_overrides "is_remote" }}{{ $remoteDefault = .host_overrides.is_remote }}{{ end -}}
 {{- end -}}
 {{- $home := promptBoolOnce . "host_overrides.is_personal" "home" $homeDefault -}}
+{{- $remote := promptBoolOnce . "host_overrides.is_remote" "remote" $remoteDefault -}}
 # Rendered by `chezmoi init` from .chezmoi.toml.tmpl — edit the template, not this file.
 # We want to auto-commit changes. Maybe eventually push.
 encryption = "age"
@@ -31,9 +49,11 @@ encryption = "age"
     recipient = "age1s0xlqq3jkyl65dgdltqsup3s8mqc4jchkqc4cec5wywlg62wkdfsgv69zl"
 
 # Per-machine answers. These override the host catalog in .chezmoidata.toml,
-# so a host that isn't listed there (a fresh VM) can still be a home node.
+# so a host that isn't listed there (a fresh VM, a work laptop) can still be
+# a home node or a desktop.
 [data.host_overrides]
     is_personal = {{ $home }}
+    is_remote = {{ $remote }}
     # Package managers are a fact of the box, not a choice: detect them.
     has_apt = {{ not (not (lookPath "apt-get")) }}
     has_dnf = {{ not (not (lookPath "dnf")) }}

@@ -33,6 +33,20 @@ Layer 3 is written by `chezmoi init` from `.chezmoi.toml.tmpl` and persists acro
     chezmoi init --prompt                             # re-ask interactively
     chezmoi data | jq .host_overrides                 # see what's stored
 
+Two answers are asked: `home` (`is_personal`: home LLM router, Forge, personal
+skills and packages) and `remote` (`is_remote`: ssh-only box, so no terminal
+emulators, sketchybar, or KDE/Krohnkite setup). A machine that should not be
+named in this public repo — a work laptop — is classified entirely by these
+answers instead of a catalog entry:
+
+    bootstrap --work --desktop                        # work laptop, Linux
+    chezmoi init --prompt --promptDefaults --promptBool home=false --promptBool remote=false erewhon/dotfiles   # work Mac
+
+Unknown hosts default to `remote=true` on Linux and `remote=false` on macOS.
+With `--prompt`, every answer is re-asked; `--promptDefaults` fills the ones
+you don't pass with their stored value, so you can flip one without retyping
+the other.
+
 `has_apt` / `has_dnf` are detected at init time rather than asked. When
 `.chezmoi.toml.tmpl` changes, chezmoi warns until you re-run `chezmoi init`
 (no repo argument needed; existing answers are kept).

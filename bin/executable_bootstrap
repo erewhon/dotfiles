@@ -13,11 +13,16 @@
 #            `ho secret`, personal skills and packages). Persisted in
 #            ~/.config/chezmoi/chezmoi.toml, so `chezmoi update` keeps it.
 #   --work   Explicitly mark it as NOT a home node.
+#   --desktop  Mark this machine as one you sit at (terminal emulators,
+#            sketchybar, KDE/Krohnkite setup). Use this for a work laptop
+#            instead of adding its hostname to the public catalog.
+#   --remote Explicitly mark it as ssh-only (no desktop configs).
 #   (neither) A host listed in .chezmoidata.toml keeps its catalog value;
-#            an unknown host is asked interactively, defaulting to work.
+#            an unknown host is asked interactively, defaulting to work and
+#            to remote (on Linux) / desktop (on macOS).
 #
-# Re-running with --home/--work on an already bootstrapped machine flips the
-# stored answer (it re-renders the chezmoi config; nothing else is re-done).
+# Re-running with these flags on an already bootstrapped machine flips the
+# stored answers (it re-renders the chezmoi config; nothing else is re-done).
 
 set -euo pipefail
 
@@ -25,10 +30,13 @@ set -euo pipefail
 # Arguments
 # ---------------------------------------------------------------------------
 HOME_NODE=""   # "", "true" or "false"
+REMOTE_NODE="" # "", "true" or "false"
 for arg in "$@"; do
     case "$arg" in
         --home|--personal) HOME_NODE="true" ;;
         --work|--not-home) HOME_NODE="false" ;;
+        --desktop) REMOTE_NODE="false" ;;
+        --remote) REMOTE_NODE="true" ;;
         -h|--help)
             sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
             exit 0 ;;
@@ -37,11 +45,16 @@ for arg in "$@"; do
 done
 
 # Answers for the prompts in .chezmoi.toml.tmpl. --promptBool is keyed by the
-# prompt text ("home"), and --prompt is what lets a new answer replace a
-# persisted one on re-run.
+# prompt text ("home", "remote"), and --prompt is what lets a new answer
+# replace a persisted one on re-run.
 CHEZMOI_INIT_ARGS=()
-if [[ -n "$HOME_NODE" ]]; then
-    CHEZMOI_INIT_ARGS+=(--prompt --promptBool "home=${HOME_NODE}")
+if [[ -n "$HOME_NODE" || -n "$REMOTE_NODE" ]]; then
+    # --prompt re-asks every *Once prompt; --promptDefaults answers the ones
+    # not given here with their default, which the template sets to the
+    # already-stored value. So flipping one answer leaves the other alone.
+    CHEZMOI_INIT_ARGS+=(--prompt --promptDefaults)
+    [[ -n "$HOME_NODE" ]] && CHEZMOI_INIT_ARGS+=(--promptBool "home=${HOME_NODE}")
+    [[ -n "$REMOTE_NODE" ]] && CHEZMOI_INIT_ARGS+=(--promptBool "remote=${REMOTE_NODE}")
 elif [[ ! -t 0 ]]; then
     # No terminal to ask on: take the catalog value / work default rather
     # than letting chezmoi read the answer from whatever stdin is.
@@ -232,9 +245,9 @@ fi
 # Summary
 # ---------------------------------------------------------------------------
 echo
-HOST_ROLE=$(chezmoi execute-template '{{ if (includeTemplate "host-profile" . | fromJson).is_personal }}home node{{ else }}work/remote node{{ end }}' 2>/dev/null || echo "unknown")
+HOST_ROLE=$(chezmoi execute-template '{{ $h := includeTemplate "host-profile" . | fromJson }}{{ if $h.is_personal }}home{{ else }}work{{ end }} {{ if $h.is_remote }}remote{{ else }}desktop{{ end }} node' 2>/dev/null || echo "unknown")
 echo "${BOLD}Setup complete!${RESET} This machine is configured as a ${BOLD}${HOST_ROLE}${RESET}"
-echo "  (change with: bootstrap --home | --work, or chezmoi init --prompt --promptBool home=true)"
+echo "  (change with: bootstrap --home | --work | --desktop | --remote, or chezmoi init --prompt --promptBool home=true)"
 echo "Next steps:"
 echo "  - Log out and back in (or run: ${BOLD}exec zsh${RESET})"
 echo "  - In tmux, press ${BOLD}prefix + I${RESET} to install plugins"
