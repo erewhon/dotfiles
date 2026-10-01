@@ -1,0 +1,83 @@
+/* Waybar in the Breeze Dark palette, mirroring ~/.config/sketchybar/colors.sh:
+ *   bar     #232627 at 80%   item pill  #31363b
+ *   text    #fcfcfc          dim        #a1a9b1
+ *   accent  #3daee9          warn/alert/good  #f67400 / #ed1515 / #11d116
+ */
+
+* {
+  font-family: "JetBrainsMono Nerd Font", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+}
+
+window#waybar {
+  background: rgba(35, 38, 39, 0.8);
+  color: #fcfcfc;
+  border-radius: 10px;
+  padding: 0 8px;
+}
+
+/* Every module is a pill, like sketchybar's background.* defaults. */
+#custom-logo,
+#clock,
+#battery,
+#pulseaudio,
+#network,
+#custom-netspeed,
+#custom-toolbox {
+  background: #31363b;
+  border-radius: 7px;
+  margin: 5px 0;
+  padding: 0 8px;
+  color: #fcfcfc;
+}
+
+#custom-logo {
+  color: #3daee9;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 0 10px;
+}
+
+#custom-toolbox {
+  font-size: 16px;
+  padding: 0 10px;
+}
+
+#custom-netspeed {
+  font-size: 12px;
+}
+#custom-netspeed.offline {
+  color: #a1a9b1;
+}
+
+#battery.warning:not(.charging) {
+  color: #f67400;
+}
+#battery.critical:not(.charging) {
+  color: #ed1515;
+}
+#battery.charging,
+#battery.plugged {
+  color: #11d116;
+}
+
+#pulseaudio.muted {
+  color: #a1a9b1;
+}
+
+#network.disconnected {
+  color: #ed1515;
+}
+
+tooltip {
+  background: #232627;
+  border: 1px solid #31363b;
+  border-radius: 7px;
+}
+tooltip label {
+  color: #fcfcfc;
+}

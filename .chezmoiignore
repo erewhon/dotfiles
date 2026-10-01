@@ -23,6 +23,7 @@ README.md
 .config/iterm
 .config/kitty
 .config/sketchybar
+.config/waybar
 .config/wezterm
 .local/share/konsole
 {{ end }}
@@ -86,5 +87,6 @@ Library
 
 # Skip Linux-only configs on macOS
 {{ if eq .chezmoi.os "darwin" }}
+.config/waybar
 .local/share/konsole
 {{ end }}

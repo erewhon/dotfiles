@@ -1,0 +1,47 @@
+#!/bin/sh
+# Waybar (the KDE counterpart of sketchybar): install, start, reload.
+#
+# Waybar is not in Linuxbrew, so it comes from apt. Debian's package ships a
+# user unit wanted by graphical-session.target, which Plasma 6 starts, so the
+# bar comes up at login with nothing else to wire. This script re-runs when
+# the config changes and reloads the running bar:
+# config: {{ include "dot_config/waybar/config.jsonc" | sha256sum }}
+# style:  {{ include "dot_config/waybar/style.css" | sha256sum }}
+
+{{ $host := includeTemplate "host-profile" . | fromJson -}}
+
+{{ if and (eq .chezmoi.os "linux") (not (get $host "is_remote")) -}}
+tag="[47-waybar]"
+
+if ! command -v kwriteconfig6 >/dev/null 2>&1; then
+    echo "$tag skipping: no Plasma 6"
+    exit 0
+fi
+
+if ! command -v waybar >/dev/null 2>&1; then
+{{- if get $host "has_apt" }}
+    echo "$tag installing waybar..."
+    sudo apt-get install -y -qq waybar
+{{- else }}
+    echo "$tag skipping: waybar is not installed and this host has no apt"
+    exit 0
+{{- end }}
+fi
+
+if systemctl --user is-active graphical-session.target >/dev/null 2>&1; then
+    systemctl --user enable waybar.service >/dev/null 2>&1 || true
+    if systemctl --user is-active waybar.service >/dev/null 2>&1; then
+        echo "$tag reloading waybar..."
+        systemctl --user reload waybar.service
+    else
+        echo "$tag starting waybar..."
+        systemctl --user start waybar.service
+    fi
+else
+    echo "$tag no graphical session: waybar starts at next login"
+fi
+
+echo "$tag done"
+{{ else -}}
+echo "[47-waybar] skipping: not a local Linux desktop"
+{{ end -}}

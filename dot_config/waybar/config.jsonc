@@ -1,0 +1,86 @@
+// Waybar: the Linux/KDE counterpart of ~/.config/sketchybar. Same layout,
+// same Breeze palette (style.css), same scripts where the OS allows.
+//
+//   left   logo
+//   right  clock, battery (laptops only), volume, network, up/down rate,
+//          JetBrains Toolbox launcher
+//
+// No front-app or window list: KWin does not let ordinary clients use
+// foreign-toplevel-management, so wlr/taskbar fails to register.
+//
+// Runs under KWin as a layer-shell surface and reserves its height, so
+// Krohnkite tiles below it (the dock gaps are set in 46-krohnkite). Started
+// by the packaged user unit (waybar.service, WantedBy=graphical-session.target).
+//
+// Reload after editing:   systemctl --user reload waybar
+// Try it in a terminal:   waybar -l debug
+{
+  "layer": "top",
+  "position": "top",
+  "height": 34,
+  "margin-top": 6,
+  "margin-left": 10,
+  "margin-right": 10,
+  "spacing": 4,
+
+  "modules-left": ["custom/logo"],
+  "modules-center": [],
+  "modules-right": ["clock", "battery", "pulseaudio", "network", "custom/netspeed", "custom/toolbox"],
+
+  // Icons are JSON escapes so that editors do not mangle the private-use
+  // glyphs: f373 KDE logo, f43a clock, f240-f244 battery, f0e7 bolt, f1e6 plug, e808 JetBrains (JetBrainsMono Nerd Font).
+  "custom/logo": {
+    "format": "\uf373",
+    "tooltip": false,
+    "on-click": "systemsettings"
+  },
+
+  "clock": {
+    "interval": 10,
+    "format": "\uf43a {:%a %d %b  %H:%M}",
+    "tooltip-format": "<tt>{calendar}</tt>"
+  },
+
+  // Hidden automatically on machines without a battery.
+  "battery": {
+    "interval": 120,
+    "states": { "warning": 29, "critical": 9 },
+    "format": "{icon} {capacity}%",
+    "format-charging": "\uf0e7 {capacity}%",
+    "format-plugged": "\uf1e6 {capacity}%",
+    "format-icons": ["\uf244", "\uf243", "\uf242", "\uf241", "\uf240"]
+  },
+
+  "pulseaudio": {
+    "format": "{icon} {volume}%",
+    "format-muted": "󰖁 {volume}%",
+    "format-icons": { "default": ["󰕿", "󰖀", "󰕾"] },
+    "on-click": "systemsettings kcm_pulseaudio",
+    "on-click-right": "pactl set-sink-mute @DEFAULT_SINK@ toggle",
+    "scroll-step": 5
+  },
+
+  // Interface carrying the default route, and its address (see network.sh
+  // on the Mac for why the address rather than the SSID).
+  "network": {
+    "interval": 30,
+    "format-wifi": "󰖩 {ipaddr}",
+    "format-ethernet": "󰈀 {ipaddr}",
+    "format-disconnected": "󰖪 offline",
+    "tooltip-format": "{ifname}  {essid}  {gwaddr}",
+    "on-click": "systemsettings kcm_networkmanagement"
+  },
+
+  "custom/netspeed": {
+    "exec": "~/.config/waybar/scripts/netspeed.sh",
+    "interval": 2,
+    "return-type": "json",
+    "tooltip": false
+  },
+
+  "custom/toolbox": {
+    "format": "\ue808",
+    "tooltip-format": "JetBrains Toolbox",
+    "on-click": "~/.config/waybar/scripts/toolbox.sh"
+  }
+}
