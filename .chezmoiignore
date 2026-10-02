@@ -8,6 +8,9 @@ README.md
 **/lazy-lock.json
 **/.DS_Store
 **/*.backup
+# pi loads every *.ts under extensions/ as an extension; the bun tests next to
+# them stay in the source tree.
+.pi/agent/extensions/*.test.ts
 
 # Host classification: defaults < catalog entry < [data.host_overrides] in chezmoi.toml
 {{ $host := includeTemplate "host-profile" . | fromJson }}
