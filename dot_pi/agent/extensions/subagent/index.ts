@@ -2,9 +2,19 @@
  * Subagent Tool - Delegate tasks to specialized agents
  *
  * Copied from pi 1.0.0 examples/extensions/subagent/index.ts (agents.ts next to
- * it is verbatim). Local change: MAX_CONCURRENCY 4 -> 3, because the GLM pair
- * serves 6 streams and the front holds one; the front must never queue behind
- * its own workers. Diff against the installed pi package to check for drift:
+ * it is verbatim). Local changes:
+ *   - MAX_CONCURRENCY 4 -> 3: the GLM pair serves 6 streams and the front holds
+ *     one; the front must never queue behind its own workers.
+ *   - Children keep a session file under ~/.pi/agent/sessions/subagents/<date>/
+ *     instead of --no-session, so a chain the parent cuts short still leaves
+ *     each step's transcript behind.
+ *   - Children run inside `gaol sandbox` (nono / Landlock) when it is available:
+ *     read+write on the project, pi's own config and caches, and /tmp; nothing
+ *     else. A `find /` or a read of ~/.ssh fails in one round instead of
+ *     wandering for ten minutes. `ho` cannot reach its store from inside, so
+ *     the parent resolves the router key once and passes LLM_ROUTER_API_KEY.
+ *     `--no-subagent-sandbox` turns it off for a session.
+ * Diff against the installed pi package to check for drift:
  *   diff $(dirname $(readlink -f $(which pi)))/../lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/subagent/index.ts ~/.pi/agent/extensions/subagent/index.ts
  *
  * Spawns a separate `pi` process for each subagent invocation,
@@ -18,7 +28,7 @@
  * Uses JSON mode to capture structured output from subagents.
  */
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -252,6 +262,74 @@ async function writePromptToTempFile(agentName: string, prompt: string): Promise
 	return { dir: tmpDir, filePath };
 }
 
+/** Where child sessions go: one directory per day, so a cut-short chain still leaves its steps' transcripts. */
+function subagentSessionDir(): string {
+	const dir = path.join(getAgentDir(), "sessions", "subagents", new Date().toISOString().slice(0, 10));
+	fs.mkdirSync(dir, { recursive: true });
+	return dir;
+}
+
+let sandboxAvailable: boolean | undefined;
+let routerKey: string | undefined;
+
+/** `gaol sandbox` is usable when gaol is installed and reports Landlock/Seatbelt support. Checked once. */
+function hasSandbox(): boolean {
+	if (sandboxAvailable !== undefined) return sandboxAvailable;
+	try {
+		const info = execFileSync("gaol", ["sandbox-info"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+		sandboxAvailable = /Supported:\s*true/i.test(info);
+	} catch {
+		sandboxAvailable = false;
+	}
+	return sandboxAvailable;
+}
+
+/** The router key for the child's environment: `ho secret` does not work inside the sandbox. Resolved once. */
+function routerKeyForChild(): string | undefined {
+	if (process.env.LLM_ROUTER_API_KEY) return process.env.LLM_ROUTER_API_KEY;
+	if (routerKey !== undefined) return routerKey || undefined;
+	try {
+		routerKey = execFileSync("ho", ["secret", "get", "llm-router/pi-api-key"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+	} catch {
+		routerKey = "";
+	}
+	return routerKey || undefined;
+}
+
+/** Extension files that are symlinks point outside ~/.pi; the child must be able to read their targets. */
+function extensionSymlinkTargets(): string[] {
+	const dir = path.join(getAgentDir(), "extensions");
+	const targets = new Set<string>();
+	try {
+		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+			if (!entry.isSymbolicLink()) continue;
+			try {
+				targets.add(path.dirname(fs.realpathSync(path.join(dir, entry.name))));
+			} catch {
+				// A dangling symlink is pi's problem, not the sandbox's.
+			}
+		}
+	} catch {
+		// No extensions dir: nothing to grant.
+	}
+	return [...targets];
+}
+
+/** Wrap a pi invocation in `gaol sandbox`: the project, pi's config and caches, and /tmp, nothing else. */
+function sandboxInvocation(invocation: { command: string; args: string[] }, cwd: string): { command: string; args: string[] } {
+	const piDir = path.dirname(getAgentDir());
+	const cache = path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"));
+	const tmp = os.tmpdir();
+	const grants = [
+		"-r", cwd, "-w", cwd,
+		"-r", piDir, "-w", getAgentDir(),
+		"-r", cache, "-w", cache,
+		"-r", tmp, "-w", tmp,
+		...extensionSymlinkTargets().flatMap((t) => ["-r", t]),
+	];
+	return { command: "gaol", args: ["sandbox", ...grants, "--allow-network", "-C", cwd, "--", invocation.command, ...invocation.args] };
+}
+
 function getPiInvocation(args: string[]): { command: string; args: string[] } {
 	const currentScript = process.argv[1];
 	const isBunVirtualScript = currentScript?.startsWith("/$bunfs/root/");
@@ -303,7 +381,7 @@ async function runSingleAgent(
 		};
 	}
 
-	const args: string[] = ["--mode", "json", "-p", "--no-session"];
+	const args: string[] = ["--mode", "json", "-p", "--session-dir", subagentSessionDir()];
 	const inheritsDispatchConfig = !agent.model;
 	const model = agent.model ?? dispatchDefaults.model;
 	if (model) args.push("--model", model);
@@ -348,9 +426,17 @@ async function runSingleAgent(
 		let wasAborted = false;
 
 		const exitCode = await new Promise<number>((resolve) => {
-			const invocation = getPiInvocation(args);
+			const childCwd = path.resolve(cwd ?? defaultCwd);
+			let invocation = getPiInvocation(args);
+			const env = { ...process.env };
+			if (sandboxEnabled && hasSandbox()) {
+				invocation = sandboxInvocation(invocation, childCwd);
+				const key = routerKeyForChild();
+				if (key) env.LLM_ROUTER_API_KEY = key;
+			}
 			const proc = spawn(invocation.command, invocation.args, {
-				cwd: cwd ?? defaultCwd,
+				cwd: childCwd,
+				env,
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
 			});
@@ -474,7 +560,11 @@ const SubagentParams = Type.Object({
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
 });
 
+let sandboxEnabled = true;
+
 export default function (pi: ExtensionAPI) {
+	pi.registerFlag("no-subagent-sandbox", { description: "Run subagents without the gaol sandbox", type: "boolean", default: false });
+	sandboxEnabled = !pi.getFlag("no-subagent-sandbox");
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent",
