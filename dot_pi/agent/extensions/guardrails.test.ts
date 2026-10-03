@@ -1,7 +1,7 @@
 // Run from the dotfiles tree: bun test dot_pi/agent/extensions
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_BUDGET, type Fence, fenceBash, fencePath, MAX_REFUSALS, newState, onAgentStart, onToolCall, onToolResult } from "./guardrails.ts";
+import { DEFAULT_BUDGET, type Fence, fenceBash, fencePath, MAX_REFUSALS, newState, onAgentStart, onToolCall, onToolResult, SCOUT_LIFT, SCOUT_MAX_REFUSALS } from "./guardrails.ts";
 
 const CWD = "/export/home/erewhon/code/smithy/forge";
 const HOME = "/export/home/erewhon";
@@ -133,5 +133,69 @@ describe("budget", () => {
 		expect(call(s, "read", { path: "/export/home/erewhon/.pi/agent/settings.json" })?.reason).toMatch(/Outside the project/);
 		s.enabled = false;
 		expect(call(s, "read", { path: "/export/home/erewhon/.pi/agent/settings.json" })).toBeUndefined();
+	});
+});
+
+describe("scouting mode", () => {
+	const OUT = "/tmp/fl-cal/run6/H01";
+	const call = (s: ReturnType<typeof newState>, toolName: string, input: Record<string, unknown> = {}) => onToolCall(s, { toolName, input, parentToolCallId: undefined });
+	const state = () => {
+		const s = newState(CWD, true, DEFAULT_BUDGET, OUT);
+		s.fence.roots = roots;
+		return s;
+	};
+	const spend = (s: ReturnType<typeof newState>) => {
+		for (let i = 0; i < DEFAULT_BUDGET; i++) expect(call(s, "bash", { command: "rg -n x forge" })).toBeUndefined();
+	};
+
+	test("subagent is budgeted like any other tool", () => {
+		const s = state();
+		spend(s);
+		expect(call(s, "subagent", { agent: "scout", task: "run this" })?.block).toBe(true);
+	});
+	test("the refusal names the deliverable and says to write no viable seed", () => {
+		const s = state();
+		spend(s);
+		const r = call(s, "read", { path: "forge/cli.py" });
+		expect(r?.reason).toContain(`${OUT}/seed.md`);
+		expect(r?.reason).toMatch(/no viable seed/);
+		expect(r?.terminate).toBe(false);
+	});
+	test("a write to the deliverable is never refused or counted, and lifts the budget by SCOUT_LIFT", () => {
+		const s = state();
+		spend(s);
+		expect(call(s, "bash", { command: "ls" })?.block).toBe(true);
+		expect(call(s, "write", { path: `${OUT}/seed.md`, content: "# x" })).toBeUndefined();
+		expect(s.calls).toBe(DEFAULT_BUDGET + 1);
+		onToolResult(s, { toolName: "write", isError: false, input: { path: `${OUT}/seed.md` } });
+		for (let i = 0; i < SCOUT_LIFT - 1; i++) expect(call(s, "bash", { command: `cat >> ${OUT}/seed.md <<'EOF'\nx\nEOF` })).toBeUndefined();
+		const r = call(s, "bash", { command: "git status --short" });
+		expect(r?.block).toBe(true);
+		expect(r?.reason).toMatch(/Finish now/);
+		expect(call(s, "write", { path: `${OUT}/repro.py`, content: "assert 1" })).toBeUndefined();
+	});
+	test("a write elsewhere counts and does not lift", () => {
+		const s = state();
+		spend(s);
+		expect(call(s, "write", { path: "/tmp/scratch/refcas.py", content: "x" })?.block).toBe(true);
+		onToolResult(s, { toolName: "write", isError: false, input: { path: "/tmp/scratch/refcas.py" } });
+		expect(s.edited).toBe(false);
+	});
+	test("three refusals do not end the run; SCOUT_MAX_REFUSALS do", () => {
+		const s = state();
+		spend(s);
+		const results = [];
+		for (let i = 0; i < SCOUT_MAX_REFUSALS; i++) results.push(call(s, "read", { path: "forge/cli.py" })?.terminate);
+		expect(results.slice(0, MAX_REFUSALS)).toEqual([false, false, false]);
+		expect(results.at(-1)).toBe(true);
+	});
+	test("the fence still applies to the deliverable path", () => {
+		const s = newState(CWD, true, DEFAULT_BUDGET, "~/evil");
+		s.fence.roots = roots;
+		expect(call(s, "write", { path: "~/evil/seed.md", content: "x" })?.reason).toMatch(/Outside the project/);
+	});
+	test("off by default", () => {
+		const s = newState(CWD);
+		expect(s.scoutOut).toBeUndefined();
 	});
 });

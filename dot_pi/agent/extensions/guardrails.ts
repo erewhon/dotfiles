@@ -21,6 +21,17 @@
  * repos and `..` past the root are refused. Calls a codemode script makes are
  * fenced too; they do not count against the budget (the script does).
  *
+ * Scouting mode (`PI_GUARD_SCOUT_OUT=<dir>` or `/scout <dir>`): for sessions that run
+ * a faultline-style brief whose only deliverable is a file under <dir>. Five
+ * calibration runs (faultline/docs/calibration/2026-10-03) showed the local front
+ * ignores every "stop at call N" instruction in a prompt and answers a budget
+ * refusal by retrying the same call until three strikes end the run with nothing
+ * written. So in this mode: subagent is budgeted like any tool; only a write under
+ * <dir> counts as progress, and it lifts the budget by a few calls for the appends
+ * rather than removing it; the refusal names the output file and tells the model
+ * to write "no viable seed" to it; and refusals keep steering instead of ending the
+ * run (a much higher strike count still stops a model that will not write at all).
+ *
  * On by default for `llm-router/*` models only. `--no-guardrails`, `/guardrails
  * off|on|status`, `/budget N`, `/fence allow <path>`.
  */
@@ -34,6 +45,9 @@ export const DEFAULT_BUDGET = 12;
 /** Refusals in a row before the run is ended. */
 export const MAX_REFUSALS = 3;
 export const NEVER_BUDGETED = new Set(["edit", "write", "subagent"]);
+/** Scouting mode: extra calls granted once the output file exists, and the strike count. */
+export const SCOUT_LIFT = 4;
+export const SCOUT_MAX_REFUSALS = 10;
 const PATH_TOOLS = new Set(["read", "grep", "find", "ls", "edit", "write"]);
 
 /** Prefixes any command may touch besides the project: scratch, binaries, package caches. */
@@ -116,11 +130,28 @@ export interface GuardState {
 	edited: boolean;
 	refusals: number;
 	fence: Fence;
+	/** Scouting mode: the directory the brief's deliverable must land in. */
+	scoutOut?: string;
 }
 
-export function newState(cwd: string, enabled = true, budget = DEFAULT_BUDGET): GuardState {
-	return { enabled, budget, calls: 0, edited: false, refusals: 0, fence: { cwd: resolve(cwd), allow: [...DEFAULT_ALLOW] } };
+export function newState(cwd: string, enabled = true, budget = DEFAULT_BUDGET, scoutOut?: string): GuardState {
+	return {
+		enabled,
+		budget,
+		calls: 0,
+		edited: false,
+		refusals: 0,
+		fence: { cwd: resolve(cwd), allow: [...DEFAULT_ALLOW] },
+		scoutOut: scoutOut ? resolve(expand(scoutOut)) : undefined,
+	};
 }
+
+/** In scouting mode, is this write aimed at the deliverable? */
+const scoutWrite = (s: GuardState, toolName: string, input: Record<string, unknown>) =>
+	s.scoutOut !== undefined && toolName === "write" && typeof input.path === "string" && under(resolve(s.fence.cwd, expand(input.path)), s.scoutOut);
+
+/** The budget in force: scouting mode grants SCOUT_LIFT more once the deliverable exists. */
+const budgetOf = (s: GuardState) => s.budget + (s.scoutOut !== undefined && s.edited ? SCOUT_LIFT : 0);
 
 export function onAgentStart(s: GuardState): void {
 	s.calls = 0;
@@ -130,7 +161,7 @@ export function onAgentStart(s: GuardState): void {
 
 function refuse(s: GuardState, reason: string): ToolCallEventResult {
 	s.refusals += 1;
-	return { block: true, reason, terminate: s.refusals >= MAX_REFUSALS };
+	return { block: true, reason, terminate: s.refusals >= (s.scoutOut !== undefined ? SCOUT_MAX_REFUSALS : MAX_REFUSALS) };
 }
 
 /** The guard's answer to one tool call: undefined lets it through. */
@@ -146,6 +177,23 @@ export function onToolCall(s: GuardState, event: Pick<ToolCallEvent, "toolName" 
 	}
 
 	if (event.parentToolCallId) return undefined; // a script's inner call; the script was counted
+
+	if (s.scoutOut !== undefined) {
+		if (scoutWrite(s, event.toolName, input)) return undefined; // the deliverable is always allowed and never counted
+		s.calls += 1;
+		if (s.calls > budgetOf(s)) {
+			const out = `${s.scoutOut}/seed.md`;
+			return refuse(
+				s,
+				s.edited
+					? `Budget spent again (${budgetOf(s)} calls). Finish now: one \`write\` to ${out} with everything you have. Every other tool, including ${event.toolName}, is refused.`
+					: `Tool budget spent (${s.budget} calls) and nothing written yet. Call \`write\` on ${out} now: a heading \`## <slug>: no viable seed\` plus what you checked and what you saw — or your seed, if you already have a repro that exits 0. Every other tool, including ${event.toolName}, is refused until that file exists.`,
+			);
+		}
+		s.refusals = 0;
+		return undefined;
+	}
+
 	s.calls += 1;
 	if (s.calls > s.budget && !s.edited && !NEVER_BUDGETED.has(event.toolName)) {
 		return refuse(
@@ -157,17 +205,22 @@ export function onToolCall(s: GuardState, event: Pick<ToolCallEvent, "toolName" 
 	return undefined;
 }
 
-export function onToolResult(s: GuardState, event: Pick<ToolResultEvent, "toolName" | "isError">): void {
-	if ((event.toolName === "edit" || event.toolName === "write") && !event.isError) s.edited = true;
+export function onToolResult(s: GuardState, event: Pick<ToolResultEvent, "toolName" | "isError"> & { input?: Record<string, unknown> }): void {
+	if (event.isError) return;
+	if (s.scoutOut !== undefined) {
+		if (scoutWrite(s, event.toolName, event.input ?? {})) s.edited = true;
+		return;
+	}
+	if (event.toolName === "edit" || event.toolName === "write") s.edited = true;
 }
 
 export const summary = (s: GuardState) =>
-	s.enabled ? `guard ${s.calls}/${s.budget}${s.edited ? " edited" : ""}` : "guard off";
+	s.enabled ? `guard ${s.calls}/${budgetOf(s)}${s.edited ? " edited" : ""}${s.scoutOut !== undefined ? " scout" : ""}` : "guard off";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerFlag("no-guardrails", { description: "Disable the tool budget and repo fence for this session", type: "boolean", default: false });
 	let state: GuardState | undefined;
-	const stateFor = (cwd: string) => (state ??= newState(cwd, !pi.getFlag("no-guardrails")));
+	const stateFor = (cwd: string) => (state ??= newState(cwd, !pi.getFlag("no-guardrails"), DEFAULT_BUDGET, process.env.PI_GUARD_SCOUT_OUT));
 
 	pi.on("agent_start", (_event, ctx) => {
 		onAgentStart(stateFor(ctx.cwd));
@@ -203,6 +256,17 @@ export default function (pi: ExtensionAPI) {
 			const n = Number.parseInt(args.trim(), 10);
 			if (Number.isFinite(n) && n > 0) s.budget = n;
 			ctx.ui.notify(summary(s), Number.isFinite(n) && n > 0 ? "info" : "warning");
+			ctx.ui.setStatus("guardrails", summary(s));
+		},
+	});
+	pi.registerCommand("scout", {
+		description: "scout <dir>|off — scouting mode: the deliverable under <dir> is the only thing that lifts the budget",
+		handler: async (args, ctx) => {
+			const s = stateFor(ctx.cwd);
+			const arg = args.trim();
+			if (arg === "off" || arg === "") s.scoutOut = undefined;
+			else s.scoutOut = resolve(expand(arg));
+			ctx.ui.notify(s.scoutOut ? `scouting mode: deliverable under ${s.scoutOut}` : "scouting mode off", "info");
 			ctx.ui.setStatus("guardrails", summary(s));
 		},
 	});
