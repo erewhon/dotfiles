@@ -154,9 +154,13 @@ const scoutWrite = (s: GuardState, toolName: string, input: Record<string, unkno
 const budgetOf = (s: GuardState) => s.budget + (s.scoutOut !== undefined && s.edited ? SCOUT_LIFT : 0);
 
 export function onAgentStart(s: GuardState): void {
+	s.refusals = 0;
+	// Scouting mode budgets the session, not the run: pi starts a new agent run after an
+	// API error or a context compaction, and a per-run reset handed the T1 calibration
+	// session a second budget mid-task (faultline docs/calibration/2026-10-03, T1 run 7).
+	if (s.scoutOut !== undefined) return;
 	s.calls = 0;
 	s.edited = false;
-	s.refusals = 0;
 }
 
 function refuse(s: GuardState, reason: string): ToolCallEventResult {

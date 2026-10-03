@@ -194,6 +194,12 @@ describe("scouting mode", () => {
 		s.fence.roots = roots;
 		expect(call(s, "write", { path: "~/evil/seed.md", content: "x" })?.reason).toMatch(/Outside the project/);
 	});
+	test("a new agent run does not reset the budget", () => {
+		const s = state();
+		spend(s);
+		onAgentStart(s);
+		expect(call(s, "bash", { command: "ls" })?.block).toBe(true);
+	});
 	test("off by default", () => {
 		const s = newState(CWD);
 		expect(s.scoutOut).toBeUndefined();
