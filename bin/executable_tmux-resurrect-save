@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# tmux-resurrect-save — save the tmux sessions now, or say how stale the last
+# save is.
+#
+# tmux-continuum saves only from a #() job in the status line, and tmux won't
+# start that job again while an earlier run is still alive, so a single hung run
+# stops auto-save silently. That happened from 2026-09-12 until 10-04. A systemd
+# timer (Linux) or launchd agent (macOS) runs this every 15 minutes as a backstop.
+#
+# Usage: tmux-resurrect-save           save, if a tmux server is running
+#        tmux-resurrect-save --status  a warning for the status bar when nothing
+#                                      has been saved for an hour, else nothing
+
+set -euo pipefail
+
+# timers and launchd agents start with a bare PATH
+export PATH="/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
+STALE_MINUTES=60
+
+tmux has-session 2>/dev/null || exit 0
+
+# where resurrect writes, resolved the way its helpers.sh does
+resurrect_dir() {
+    local dir
+    dir=$(tmux show-option -gqv @resurrect-dir)
+    if [ -n "$dir" ]; then
+        dir="${dir/#\~/$HOME}"
+        dir="${dir//\$HOME/$HOME}"
+        dir="${dir//\$HOSTNAME/$(hostname)}"
+    elif [ -d "$HOME/.tmux/resurrect" ]; then
+        dir="$HOME/.tmux/resurrect"
+    else
+        dir="${XDG_DATA_HOME:-$HOME/.local/share}/tmux/resurrect"
+    fi
+    echo "$dir"
+}
+
+mtime() {
+    stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"
+}
+
+if [ "${1:-}" = "--status" ]; then
+    # resurrect deletes a save identical to the last one, but the create and
+    # delete still touch the directory, so its mtime is the last save attempt
+    dir=$(resurrect_dir)
+    last=0
+    [ -d "$dir" ] && last=$(mtime "$dir")
+    # a server younger than the threshold hasn't had its chance yet
+    started=$(tmux display-message -p '#{start_time}')
+    [ "$started" -gt "$last" ] && last=$started
+    age=$(( ($(date +%s) - last) / 60 ))
+    if [ "$age" -ge "$STALE_MINUTES" ]; then
+        if [ "$age" -ge 120 ]; then
+            ago="$((age / 60))h"
+        else
+            ago="${age}m"
+        fi
+        printf '#[fg=#11111b,bg=#f38ba8] ⚠ no tmux save in %s ' "$ago"
+    fi
+    exit 0
+fi
+
+script=$(tmux show-option -gqv @resurrect-save-script-path)
+if [ ! -x "$script" ]; then
+    echo "tmux-resurrect-save: tmux-resurrect isn't loaded in this server" >&2
+    exit 1
+fi
+"$script" quiet

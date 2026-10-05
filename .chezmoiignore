@@ -90,6 +90,7 @@ Library
 
 # Skip Linux-only configs on macOS
 {{ if eq .chezmoi.os "darwin" }}
+.config/systemd
 .config/waybar
 .local/share/konsole
 {{ end }}

@@ -1,0 +1,27 @@
+#!/bin/sh
+# Schedule ~/bin/tmux-resurrect-save every 15 minutes: a systemd user timer on
+# Linux, a launchd agent on macOS. Re-runs when the units change:
+{{ if eq .chezmoi.os "darwin" -}}
+# plist: {{ include "Library/LaunchAgents/org.byrnes.tmux-resurrect-save.plist.tmpl" | sha256sum }}
+tag="[48-tmux-resurrect-save]"
+LABEL="org.byrnes.tmux-resurrect-save"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+
+mkdir -p "$HOME/Library/Logs"
+launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$PLIST" || {
+    echo "$tag WARN launchctl bootstrap failed"; exit 0; }
+echo "$tag launchd agent loaded"
+{{ else if eq .chezmoi.os "linux" -}}
+# service: {{ include "dot_config/systemd/user/tmux-resurrect-save.service" | sha256sum }}
+# timer:   {{ include "dot_config/systemd/user/tmux-resurrect-save.timer" | sha256sum }}
+tag="[48-tmux-resurrect-save]"
+
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+    echo "$tag skipping: no systemd user session"
+    exit 0
+fi
+systemctl --user daemon-reload
+systemctl --user enable --now tmux-resurrect-save.timer
+echo "$tag timer enabled"
+{{ end -}}

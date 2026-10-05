@@ -1,0 +1,7 @@
+# Backstop for tmux-continuum's status-line auto-save; see ~/bin/tmux-resurrect-save.
+[Unit]
+Description=Save tmux sessions with tmux-resurrect
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/tmux-resurrect-save

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Backstop for tmux-continuum's status-line auto-save; see ~/bin/tmux-resurrect-save. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>             <string>org.byrnes.tmux-resurrect-save</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{ .chezmoi.homeDir }}/bin/tmux-resurrect-save</string>
+    </array>
+    <key>StartInterval</key>     <integer>900</integer>
+    <key>ProcessType</key>       <string>Background</string>
+    <key>StandardErrorPath</key> <string>{{ .chezmoi.homeDir }}/Library/Logs/tmux-resurrect-save.log</string>
+</dict>
+</plist>
