@@ -33,7 +33,9 @@
  * run (a much higher strike count still stops a model that will not write at all).
  *
  * On by default for `llm-router/*` models only. `--no-guardrails`, `/guardrails
- * off|on|status`, `/budget N`, `/fence allow <path>`.
+ * off|on|status`, `/budget N` (or `PI_GUARD_BUDGET=N` for a `-p` run, where no command can
+ * be typed: faultline's run-brief.sh sets it from the budget the brief states), `/fence
+ * allow <path>`.
  */
 
 import { readdirSync } from "node:fs";
@@ -42,6 +44,12 @@ import { isAbsolute, resolve } from "node:path";
 import type { ExtensionAPI, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 
 export const DEFAULT_BUDGET = 12;
+
+/** The budget `PI_GUARD_BUDGET` asks for; anything but a positive integer means the default. */
+export function envBudget(raw: string | undefined): number {
+	const n = Number.parseInt(raw ?? "", 10);
+	return Number.isFinite(n) && n > 0 && String(n) === (raw ?? "").trim() ? n : DEFAULT_BUDGET;
+}
 /** Refusals in a row before the run is ended. */
 export const MAX_REFUSALS = 3;
 export const NEVER_BUDGETED = new Set(["edit", "write", "subagent"]);
@@ -237,7 +245,7 @@ export const summary = (s: GuardState) =>
 export default function (pi: ExtensionAPI) {
 	pi.registerFlag("no-guardrails", { description: "Disable the tool budget and repo fence for this session", type: "boolean", default: false });
 	let state: GuardState | undefined;
-	const stateFor = (cwd: string) => (state ??= newState(cwd, !pi.getFlag("no-guardrails"), DEFAULT_BUDGET, process.env.PI_GUARD_SCOUT_OUT));
+	const stateFor = (cwd: string) => (state ??= newState(cwd, !pi.getFlag("no-guardrails"), envBudget(process.env.PI_GUARD_BUDGET), process.env.PI_GUARD_SCOUT_OUT));
 
 	pi.on("agent_start", (_event, ctx) => {
 		onAgentStart(stateFor(ctx.cwd));

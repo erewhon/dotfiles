@@ -1,7 +1,7 @@
 // Run from the dotfiles tree: bun test dot_pi/agent/extensions
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_BUDGET, type Fence, fenceBash, fencePath, MAX_REFUSALS, newState, onAgentStart, onToolCall, onToolResult, SCOUT_LIFT, SCOUT_MAX_REFUSALS, setScoutOut } from "./guardrails.ts";
+import { DEFAULT_BUDGET, envBudget, type Fence, fenceBash, fencePath, MAX_REFUSALS, newState, onAgentStart, onToolCall, onToolResult, SCOUT_LIFT, SCOUT_MAX_REFUSALS, setScoutOut } from "./guardrails.ts";
 
 const CWD = "/export/home/erewhon/code/smithy/forge";
 const HOME = "/export/home/erewhon";
@@ -214,5 +214,26 @@ describe("scouting mode", () => {
 	test("off by default", () => {
 		const s = newState(CWD);
 		expect(s.scoutOut).toBeUndefined();
+	});
+});
+
+describe("PI_GUARD_BUDGET", () => {
+	test("a positive integer sets the budget; anything else keeps the default", () => {
+		expect(envBudget("24")).toBe(24);
+		expect(envBudget(" 24 ")).toBe(24);
+		expect(envBudget(undefined)).toBe(DEFAULT_BUDGET);
+		expect(envBudget("")).toBe(DEFAULT_BUDGET);
+		expect(envBudget("0")).toBe(DEFAULT_BUDGET);
+		expect(envBudget("-3")).toBe(DEFAULT_BUDGET);
+		expect(envBudget("12abc")).toBe(DEFAULT_BUDGET);
+	});
+	test("the state built from it refuses at that budget in scouting mode", () => {
+		const s = newState(CWD, true, envBudget("3"), "/tmp/fl/out");
+		s.fence.roots = roots;
+		const call = (tool: string) => onToolCall(s, { toolName: tool, input: { command: "ls" }, parentToolCallId: undefined });
+		expect(call("bash")).toBeUndefined();
+		expect(call("bash")).toBeUndefined();
+		expect(call("bash")).toBeUndefined();
+		expect(call("bash")?.reason).toMatch(/Tool budget spent \(3 calls\)/);
 	});
 });
