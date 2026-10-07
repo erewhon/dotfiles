@@ -135,15 +135,28 @@ export interface GuardState {
 }
 
 export function newState(cwd: string, enabled = true, budget = DEFAULT_BUDGET, scoutOut?: string): GuardState {
-	return {
+	const s: GuardState = {
 		enabled,
 		budget,
 		calls: 0,
 		edited: false,
 		refusals: 0,
 		fence: { cwd: resolve(cwd), allow: [...DEFAULT_ALLOW] },
-		scoutOut: scoutOut ? resolve(expand(scoutOut)) : undefined,
 	};
+	setScoutOut(s, scoutOut);
+	return s;
+}
+
+/**
+ * Set or clear the scouting deliverable dir. While set it is inside the fence: the brief
+ * tells the model to `write` seed.md there and append with `cat >>` from bash, and an out
+ * dir under $HOME was refused as "the home directory" before the scouting exemption was
+ * ever consulted (faultline, 2026-10-06: a 1.2k-token ticket written twice, nothing saved).
+ */
+export function setScoutOut(s: GuardState, dir: string | undefined): void {
+	if (s.scoutOut !== undefined) s.fence.allow = s.fence.allow.filter((p) => p !== s.scoutOut);
+	s.scoutOut = dir ? resolve(expand(dir)) : undefined;
+	if (s.scoutOut !== undefined) s.fence.allow.push(s.scoutOut);
 }
 
 /** In scouting mode, is this write aimed at the deliverable? */
@@ -268,8 +281,7 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const s = stateFor(ctx.cwd);
 			const arg = args.trim();
-			if (arg === "off" || arg === "") s.scoutOut = undefined;
-			else s.scoutOut = resolve(expand(arg));
+			setScoutOut(s, arg === "off" || arg === "" ? undefined : arg);
 			ctx.ui.notify(s.scoutOut ? `scouting mode: deliverable under ${s.scoutOut}` : "scouting mode off", "info");
 			ctx.ui.setStatus("guardrails", summary(s));
 		},

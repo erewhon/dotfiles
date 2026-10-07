@@ -1,7 +1,7 @@
 // Run from the dotfiles tree: bun test dot_pi/agent/extensions
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_BUDGET, type Fence, fenceBash, fencePath, MAX_REFUSALS, newState, onAgentStart, onToolCall, onToolResult, SCOUT_LIFT, SCOUT_MAX_REFUSALS } from "./guardrails.ts";
+import { DEFAULT_BUDGET, type Fence, fenceBash, fencePath, MAX_REFUSALS, newState, onAgentStart, onToolCall, onToolResult, SCOUT_LIFT, SCOUT_MAX_REFUSALS, setScoutOut } from "./guardrails.ts";
 
 const CWD = "/export/home/erewhon/code/smithy/forge";
 const HOME = "/export/home/erewhon";
@@ -189,9 +189,20 @@ describe("scouting mode", () => {
 		expect(results.slice(0, MAX_REFUSALS)).toEqual([false, false, false]);
 		expect(results.at(-1)).toBe(true);
 	});
-	test("the fence still applies to the deliverable path", () => {
+	test("a deliverable dir under HOME is inside the fence, for write and for bash appends; the rest of HOME is not", () => {
+		const s = newState(CWD, true, DEFAULT_BUDGET, "~/code/faultline/out/seeds/07e2953ce8");
+		s.fence.roots = roots;
+		const out = `${process.env.HOME}/code/faultline/out/seeds/07e2953ce8`;
+		expect(call(s, "write", { path: `${out}/seed.md`, content: "x" })).toBeUndefined();
+		expect(call(s, "bash", { command: `cat >> "${out}/seed.md" <<'EOF'\nx\nEOF` })).toBeUndefined();
+		expect(call(s, "write", { path: "~/code/faultline/out/other.md", content: "x" })?.reason).toMatch(/Outside the project/);
+		expect(call(s, "bash", { command: "cat ~/.ssh/id_ed25519" })?.reason).toMatch(/Outside the project/);
+	});
+	test("/scout off takes the deliverable dir back out of the fence", () => {
 		const s = newState(CWD, true, DEFAULT_BUDGET, "~/evil");
 		s.fence.roots = roots;
+		setScoutOut(s, undefined);
+		expect(s.scoutOut).toBeUndefined();
 		expect(call(s, "write", { path: "~/evil/seed.md", content: "x" })?.reason).toMatch(/Outside the project/);
 	});
 	test("a new agent run does not reset the budget", () => {
