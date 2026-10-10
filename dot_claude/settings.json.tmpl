@@ -128,7 +128,8 @@
     "typescript-lsp@claude-plugins-official": true,
     "filetree@claude-code-filetree": true,
     "blast-radius@claude-code-playground-mods": true,
-    "replay-theater@claude-code-playground-mods": true
+    "replay-theater@claude-code-playground-mods": true,
+    "savvy-progress@claude-kit": true
   },
   "extraKnownMarketplaces": {
     "thedotmack": {
@@ -153,6 +154,12 @@
       "source": {
         "source": "directory",
         "path": "{{ .chezmoi.homeDir }}/.local/share/claude-code-playground/claude-code/mods"
+      }
+    },
+    "claude-kit": {
+      "source": {
+        "source": "directory",
+        "path": "{{ .chezmoi.homeDir }}/.local/share/claude-kit"
       }
     }
   },
