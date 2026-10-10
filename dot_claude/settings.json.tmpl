@@ -37,7 +37,7 @@
     ]
   },
 {{- if $host.is_personal }}
-  "model": "claude-fable-5-1",
+  "model": "fable",
 {{- end }}
   "hooks": {
     "SessionStart": [
@@ -125,13 +125,33 @@
     "frontend-design@claude-plugins-official": true,
     "code-review@claude-plugins-official": true,
     "claude-mem@thedotmack": true,
-    "typescript-lsp@claude-plugins-official": true
+    "typescript-lsp@claude-plugins-official": true,
+    "filetree@claude-code-filetree": true,
+    "blast-radius@claude-code-playground-mods": true
   },
   "extraKnownMarketplaces": {
     "thedotmack": {
       "source": {
         "source": "github",
         "repo": "thedotmack/claude-mem"
+      }
+    },
+    "hellosverre-mods": {
+      "source": {
+        "source": "github",
+        "repo": "hellosverre/claude-skins"
+      }
+    },
+    "claude-code-filetree": {
+      "source": {
+        "source": "github",
+        "repo": "data-goblin/claude-code-filetree"
+      }
+    },
+    "claude-code-playground-mods": {
+      "source": {
+        "source": "directory",
+        "path": "{{ .chezmoi.homeDir }}/.local/share/claude-code-playground/claude-code/mods"
       }
     }
   },
@@ -143,6 +163,16 @@
     }
   },
 {{- end }}
+  "pluginConfigs": {
+    "filetree@claude-code-filetree": {
+      "options": {
+        "activity": "reads and writes",
+        "glyphs": "auto",
+        "follow": "on",
+        "column": "date"
+      }
+    }
+  },
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
   "switchModelsOnFlag": false,
