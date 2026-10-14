@@ -32,10 +32,14 @@
  * to write "no viable seed" to it; and refusals keep steering instead of ending the
  * run (a much higher strike count still stops a model that will not write at all).
  *
- * On by default for `llm-router/*` models only. `--no-guardrails`, `/guardrails
- * off|on|status`, `/budget N` (or `PI_GUARD_BUDGET=N` for a `-p` run, where no command can
- * be typed: faultline's run-brief.sh sets it from the budget the brief states), `/fence
- * allow <path>`.
+ * Applies to `llm-router/*` models only. On by default for a headless run (`-p`, rpc:
+ * no UI), where nobody is watching and the budget is the only brake; off by default in
+ * an interactive chat (2026-10-10: the owner kept hitting it mid-conversation, and there
+ * a human sees the recon and can interrupt). `PI_GUARD_BUDGET` or `PI_GUARD_SCOUT_OUT`
+ * in the environment, or `--guardrails`, turns it on for a chat; `--no-guardrails`
+ * turns it off for a headless run. `/guardrails off|on|status`, `/budget N` (or
+ * `PI_GUARD_BUDGET=N` for a `-p` run, where no command can be typed: faultline's
+ * run-brief.sh sets it from the budget the brief states), `/fence allow <path>`.
  */
 
 import { readdirSync } from "node:fs";
@@ -49,6 +53,17 @@ export const DEFAULT_BUDGET = 12;
 export function envBudget(raw: string | undefined): number {
 	const n = Number.parseInt(raw ?? "", 10);
 	return Number.isFinite(n) && n > 0 && String(n) === (raw ?? "").trim() ? n : DEFAULT_BUDGET;
+}
+/**
+ * Whether the guard starts enabled. `--no-guardrails` always wins; a headless run (no UI)
+ * is guarded; an interactive chat is guarded only when asked for by `--guardrails` or by
+ * a `PI_GUARD_*` variable (a wrapper such as faultline's run-brief.sh setting one means a
+ * brief is driving the session, UI or not).
+ */
+export function defaultEnabled(o: { hasUI: boolean; noGuardrails: boolean; guardrails: boolean; env: Record<string, string | undefined> }): boolean {
+	if (o.noGuardrails) return false;
+	if (!o.hasUI || o.guardrails) return true;
+	return o.env.PI_GUARD_BUDGET !== undefined || o.env.PI_GUARD_SCOUT_OUT !== undefined;
 }
 /** Refusals in a row before the run is ended. */
 export const MAX_REFUSALS = 3;
@@ -243,16 +258,23 @@ export const summary = (s: GuardState) =>
 	s.enabled ? `guard ${s.calls}/${budgetOf(s)}${s.edited ? " edited" : ""}${s.scoutOut !== undefined ? " scout" : ""}` : "guard off";
 
 export default function (pi: ExtensionAPI) {
-	pi.registerFlag("no-guardrails", { description: "Disable the tool budget and repo fence for this session", type: "boolean", default: false });
+	pi.registerFlag("no-guardrails", { description: "Disable the tool budget and repo fence for this session (headless runs have them on)", type: "boolean", default: false });
+	pi.registerFlag("guardrails", { description: "Enable the tool budget and repo fence for this interactive session (off by default in a chat)", type: "boolean", default: false });
 	let state: GuardState | undefined;
-	const stateFor = (cwd: string) => (state ??= newState(cwd, !pi.getFlag("no-guardrails"), envBudget(process.env.PI_GUARD_BUDGET), process.env.PI_GUARD_SCOUT_OUT));
+	const stateFor = (ctx: { cwd: string; hasUI: boolean }) =>
+		(state ??= newState(
+			ctx.cwd,
+			defaultEnabled({ hasUI: ctx.hasUI, noGuardrails: !!pi.getFlag("no-guardrails"), guardrails: !!pi.getFlag("guardrails"), env: process.env }),
+			envBudget(process.env.PI_GUARD_BUDGET),
+			process.env.PI_GUARD_SCOUT_OUT,
+		));
 
 	pi.on("agent_start", (_event, ctx) => {
-		onAgentStart(stateFor(ctx.cwd));
-		ctx.ui.setStatus("guardrails", summary(stateFor(ctx.cwd)));
+		onAgentStart(stateFor(ctx));
+		ctx.ui.setStatus("guardrails", summary(stateFor(ctx)));
 	});
 	pi.on("tool_call", (event, ctx) => {
-		const s = stateFor(ctx.cwd);
+		const s = stateFor(ctx);
 		// The fence and budget are for the local front; a frontier model on another provider is left alone.
 		if (ctx.model?.provider !== "llm-router") return undefined;
 		const result = onToolCall(s, event);
@@ -260,13 +282,13 @@ export default function (pi: ExtensionAPI) {
 		return result;
 	});
 	pi.on("tool_result", (event, ctx) => {
-		onToolResult(stateFor(ctx.cwd), event);
+		onToolResult(stateFor(ctx), event);
 	});
 
 	pi.registerCommand("guardrails", {
 		description: "guardrails on|off|status — tool budget and repo fence",
 		handler: async (args, ctx) => {
-			const s = stateFor(ctx.cwd);
+			const s = stateFor(ctx);
 			const arg = args.trim();
 			if (arg === "on") s.enabled = true;
 			else if (arg === "off") s.enabled = false;
@@ -277,7 +299,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("budget", {
 		description: "budget N — tool calls allowed per turn before an edit (default 12)",
 		handler: async (args, ctx) => {
-			const s = stateFor(ctx.cwd);
+			const s = stateFor(ctx);
 			const n = Number.parseInt(args.trim(), 10);
 			if (Number.isFinite(n) && n > 0) s.budget = n;
 			ctx.ui.notify(summary(s), Number.isFinite(n) && n > 0 ? "info" : "warning");
@@ -287,7 +309,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("scout", {
 		description: "scout <dir>|off — scouting mode: the deliverable under <dir> is the only thing that lifts the budget",
 		handler: async (args, ctx) => {
-			const s = stateFor(ctx.cwd);
+			const s = stateFor(ctx);
 			const arg = args.trim();
 			setScoutOut(s, arg === "off" || arg === "" ? undefined : arg);
 			ctx.ui.notify(s.scoutOut ? `scouting mode: deliverable under ${s.scoutOut}` : "scouting mode off", "info");
@@ -297,7 +319,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("fence", {
 		description: "fence allow <path> — let this session touch another tree",
 		handler: async (args, ctx) => {
-			const s = stateFor(ctx.cwd);
+			const s = stateFor(ctx);
 			const [verb, ...rest] = args.trim().split(/\s+/);
 			if (verb === "allow" && rest[0]) s.fence.allow.push(resolve(expand(rest[0])));
 			ctx.ui.notify(`fence: ${s.fence.cwd}, allowed: ${s.fence.allow.join(" ")}`, "info");

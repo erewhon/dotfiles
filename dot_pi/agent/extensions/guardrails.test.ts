@@ -1,7 +1,7 @@
 // Run from the dotfiles tree: bun test dot_pi/agent/extensions
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_BUDGET, envBudget, type Fence, fenceBash, fencePath, MAX_REFUSALS, newState, onAgentStart, onToolCall, onToolResult, SCOUT_LIFT, SCOUT_MAX_REFUSALS, setScoutOut } from "./guardrails.ts";
+import { DEFAULT_BUDGET, defaultEnabled, envBudget, type Fence, fenceBash, fencePath, MAX_REFUSALS, newState, onAgentStart, onToolCall, onToolResult, SCOUT_LIFT, SCOUT_MAX_REFUSALS, setScoutOut } from "./guardrails.ts";
 
 const CWD = "/export/home/erewhon/code/smithy/forge";
 const HOME = "/export/home/erewhon";
@@ -235,5 +235,23 @@ describe("PI_GUARD_BUDGET", () => {
 		expect(call("bash")).toBeUndefined();
 		expect(call("bash")).toBeUndefined();
 		expect(call("bash")?.reason).toMatch(/Tool budget spent \(3 calls\)/);
+	});
+});
+
+describe("defaultEnabled", () => {
+	const on = (o: Partial<Parameters<typeof defaultEnabled>[0]>) => defaultEnabled({ hasUI: true, noGuardrails: false, guardrails: false, env: {}, ...o });
+	test("an interactive chat starts unguarded; a headless run starts guarded", () => {
+		expect(on({ hasUI: true })).toBe(false);
+		expect(on({ hasUI: false })).toBe(true);
+	});
+	test("--no-guardrails wins everywhere, --guardrails turns a chat on", () => {
+		expect(on({ hasUI: false, noGuardrails: true })).toBe(false);
+		expect(on({ hasUI: true, noGuardrails: true, guardrails: true, env: { PI_GUARD_BUDGET: "3" } })).toBe(false);
+		expect(on({ hasUI: true, guardrails: true })).toBe(true);
+	});
+	test("a PI_GUARD_* variable means a brief is driving the session: guarded even with a UI", () => {
+		expect(on({ env: { PI_GUARD_BUDGET: "20" } })).toBe(true);
+		expect(on({ env: { PI_GUARD_SCOUT_OUT: "/tmp/fl/out" } })).toBe(true);
+		expect(on({ env: { HOME: "/x" } })).toBe(false);
 	});
 });
