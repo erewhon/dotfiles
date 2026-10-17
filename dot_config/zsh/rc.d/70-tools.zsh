@@ -73,6 +73,9 @@ fi
 
 # zoxide directory jumper
 if command -v zoxide 1>/dev/null 2>&1; then
+    # zinit aliases zi=zinit, which breaks old zoxide's `zi() {...}`
+    # (parse error) and shadows zoxide's zi everywhere else.
+    unalias zi 2>/dev/null
     eval "$(zoxide init zsh)"
 fi
 
