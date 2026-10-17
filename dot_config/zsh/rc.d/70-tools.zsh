@@ -105,7 +105,18 @@ fi
 if command -v fzf &> /dev/null; then
     # Tab completion + Ctrl-T (file picker) + Alt-C (cd picker).
     # Ctrl-R is left to atuin (loaded above).
-    source <(fzf --zsh)
+    if fzf --zsh &> /dev/null; then
+        source <(fzf --zsh)
+    else
+        # fzf < 0.48 (e.g. Debian bookworm's 0.38) has no --zsh; use the
+        # packaged scripts, keeping whatever Ctrl-R was bound to before.
+        _fzf_ex=/usr/share/doc/fzf/examples
+        _ctrl_r=${$(bindkey '^R')[2]}
+        [[ -r $_fzf_ex/completion.zsh ]] && source $_fzf_ex/completion.zsh
+        [[ -r $_fzf_ex/key-bindings.zsh ]] && source $_fzf_ex/key-bindings.zsh
+        [[ -n $_ctrl_r ]] && bindkey '^R' $_ctrl_r
+        unset _fzf_ex _ctrl_r
+    fi
 
     alias gitb='git branch | fzf-tmux -d 15'
 
