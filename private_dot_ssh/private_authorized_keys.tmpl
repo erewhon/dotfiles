@@ -1,3 +1,21 @@
-{{ range (gitHubKeys "erewhon") -}}
-{{   .Key }}
-{{ end -}}
+{{- /* Public keys from github.com/erewhon (.Key is a *string,
+       so toJson/fromJson turns it into a plain string), plus homelab workstation keys that
+       aren't on GitHub. A key already on GitHub is not repeated. */ -}}
+{{- $keys := list -}}
+{{- $seen := list -}}
+{{- range (gitHubKeys "erewhon") -}}
+{{-   $k := .Key | toJson | fromJson -}}
+{{-   $keys = append $keys $k -}}
+{{-   $seen = append $seen $k -}}
+{{- end -}}
+{{- $extra := list
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6SlWn7Y30cv7fw6WYnEdGeyQUAVNS5G09ngJjHN6Bf erewhon@delphi"
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILTS1aT5fn0H1OI7DMiJUFIHL5eVR45rGwJMEncRVgrN erewhon@merope"
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBurODUiFTo22shZk/wWNKAbxKtN+cTiB6F+3z6zSGlO erewhon@euclid" -}}
+{{- range $extra -}}
+{{-   $parts := splitList " " . -}}
+{{-   if not (has (printf "%s %s" (index $parts 0) (index $parts 1)) $seen) -}}
+{{-     $keys = append $keys . -}}
+{{-   end -}}
+{{- end -}}
+{{ join "\n" $keys }}

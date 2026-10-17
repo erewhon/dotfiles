@@ -205,10 +205,12 @@ fi
 step "chezmoi init..."
 
 if [[ -d "$HOME/.local/share/chezmoi" ]]; then
-    # Source already cloned: (re)render only the config so a --home/--work
-    # answer still lands.
+    # Source already cloned: pull it first (a stale source lacks templates
+    # the config and summary depend on), then re-render the config so a
+    # --home/--work answer still lands.
+    chezmoi git -- pull --ff-only --quiet
     chezmoi init "${CHEZMOI_INIT_ARGS[@]}"
-    skip_msg
+    done_msg
 else
     chezmoi init "${CHEZMOI_INIT_ARGS[@]}" erewhon/dotfiles
     done_msg
@@ -245,7 +247,7 @@ fi
 # Summary
 # ---------------------------------------------------------------------------
 echo
-HOST_ROLE=$(chezmoi execute-template '{{ $h := includeTemplate "host-profile" . | fromJson }}{{ if $h.is_personal }}home{{ else }}work{{ end }} {{ if $h.is_remote }}remote{{ else }}desktop{{ end }} node' 2>/dev/null || echo "unknown")
+HOST_ROLE=$(chezmoi execute-template '{{ $h := includeTemplate "host-profile" . | fromJson }}{{ if $h.is_personal }}home{{ else }}work{{ end }} {{ if $h.is_remote }}remote{{ else }}desktop{{ end }} node' 2>/dev/null || echo "unknown (run chezmoi doctor; the source may be out of date)")
 echo "${BOLD}Setup complete!${RESET} This machine is configured as a ${BOLD}${HOST_ROLE}${RESET}"
 echo "  (change with: bootstrap --home | --work | --desktop | --remote, or chezmoi init --prompt --promptBool home=true)"
 echo "Next steps:"
