@@ -16,6 +16,16 @@ if ! command -v brew >/dev/null 2>&1; then
     exit 0
 fi
 
+# Newer Homebrew refuses to load formulae from non-official taps until they
+# are trusted, and `brew bundle` has no flag for it. Trust every tap the
+# Brewfile names (idempotent; works before the tap is cloned).
+if brew trust --help >/dev/null 2>&1; then
+    sed -n 's/^tap "\([^"]*\)".*/\1/p' "$HOME/.config/Brewfile" |
+        while read -r tap; do
+            brew trust --quiet --tap "$tap"
+        done
+fi
+
 echo "[20-brew-bundle] running brew bundle..."
 brew bundle --file="$HOME/.config/Brewfile"
 echo "[20-brew-bundle] done"

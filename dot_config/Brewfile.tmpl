@@ -12,6 +12,7 @@ tap "teamookla/speedtest"
 brew "bat"
 brew "bat-extras"
 brew "coreutils"
+brew "csvlens"
 brew "diffstat"
 brew "duf"
 brew "dust"
@@ -31,7 +32,6 @@ brew "tree"
 brew "up"
 brew "wget"
 brew "xh"
-brew "xsv"
 brew "yq"
 
 # Shell & terminal
@@ -124,7 +124,6 @@ brew "pandoc"
 brew "tectonic"
 
 # AI tools
-brew "aider"
 brew "block-goose-cli"
 brew "fabric-ai"
 brew "opencode"
@@ -149,7 +148,6 @@ brew "kubeseal"
 brew "kubernetes-cli"
 brew "kustomize"
 brew "stern"
-brew "tuios"
 brew "vcluster"
 
 # Fonts (brew installs font casks on Linux too, into ~/.local/share/fonts)
@@ -158,7 +156,6 @@ cask "font-jetbrains-mono-nerd-font"
 {{ if $host.is_personal -}}
 # Personal tools
 brew "erewhon/tap/agent-monitor"
-brew "erewhon/tap/protectinator"
 
 # Fun & entertainment
 brew "asciiquarium"
