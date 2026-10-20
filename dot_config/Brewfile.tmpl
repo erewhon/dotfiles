@@ -6,6 +6,10 @@
 tap "adembc/tap"
 tap "derailed/k9s"
 tap "erewhon/tap"
+# smithy tools (agent-monitor, pitf, tokenator, llm-router, orpheus-say) moved
+# here from erewhon/tap 2026-10-20. The URL is required: the tap is on
+# code.middlefork.org, not GitHub.
+tap "smithy/tap", "https://code.middlefork.org/smithy/homebrew-tap"
 tap "teamookla/speedtest"
 
 # Core CLI tools
@@ -155,7 +159,7 @@ cask "font-jetbrains-mono-nerd-font"
 
 {{ if $host.is_personal -}}
 # Personal tools
-brew "erewhon/tap/agent-monitor"
+brew "smithy/tap/agent-monitor"
 
 # Fun & entertainment
 brew "asciiquarium"
@@ -186,7 +190,7 @@ brew "FelixKratz/formulae/sketchybar"
 # macOS casks
 cask "amethyst"
 cask "ghostty"
-cask "orpheus-say"
+cask "smithy/tap/orpheus-say"
 cask "wezterm"
 
 {{ end -}}
