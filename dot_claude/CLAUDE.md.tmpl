@@ -37,6 +37,20 @@ The Nous MCP server (`~/Projects/erewhon/nous/nous-py/nous_mcp/`) is connected t
 - Do **not** use `mcp__nous__update_database_rows` for tasks — slow path needing a row-UUID lookup. `update_task_status` is the right tool.
 - Do **not** create ad-hoc task tracking internally; all task state lives in Forge.
 
+### List-shaped queries: `nous-mcp call … | jq` from bash
+
+Every Nous tool also runs as a shell command (`~/.local/bin/nous-mcp`, same code as the MCP server, Nous env from `ho secret`). For anything that returns a **list** — `query_tasks`, `task_summary`, `search_pages`, `recent_task_activity`, `get_feature_tasks`, `list_pages` — call it from Bash and filter with `jq` so only the rows you need reach context, instead of pulling the whole result through the MCP tool:
+
+```bash
+nous-mcp tools [QUERY]                                   # list tools (no daemon)
+nous-mcp call task_summary '{"project":"meta"}' | jq '.projects[].by_status'
+nous-mcp call query_tasks '{"project":"meta","status":"Ready"}' \
+  | jq -r '.tasks[] | [.priority, .feature, .task] | @tsv'
+nous-mcp call get_task_spec '{"task":"Task: …"}' | jq -r .content   # @FILE or - for stdin args
+```
+
+Exit 1 with the error text on a tool error. Single-record reads and **every write** (`update_task_status`, `create_task`, page edits) stay on the MCP tools, where the arguments are typed and the call is visible in the transcript.
+
 ### High-level helpers — reach for these before low-level tools
 
 The MCP exposes both low-level primitives (`update_database_rows`, `update_page`, etc.) and higher-level helpers that wrap common workflows. Default to the helpers:

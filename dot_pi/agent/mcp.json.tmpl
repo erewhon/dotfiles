@@ -1,0 +1,19 @@
+{{- /* Pi MCP servers. On euclid the gateway is loopback-only (no bearer); elsewhere
+       go through the hub front door with the shared token. See
+       ~/code/erewhon/homeops/config/euclid/mcp-gateway/README.md.
+       Default exposure is `codemode`: the tools are reachable from codemode scripts
+       (tools.mcp__nous__*) and not declared to the model, so a session that never
+       touches Nous pays nothing for it. */ -}}
+{
+  "mcpServers": {
+    "nous": {
+{{- if eq .chezmoi.hostname "euclid" }}
+      "url": "http://127.0.0.1:9701/servers/nous/mcp",
+{{- else }}
+      "url": "https://mcp.bcc.sh/servers/nous/mcp",
+      "headers": { "Authorization": "!echo Bearer $(ho secret get mcp-gateway-token)" },
+{{- end }}
+      "description": "Nous notebooks and the Forge task database: task specs (get_task_spec), status changes (update_task_status), task queries (query_tasks, task_summary), pages and search."
+    }
+  }
+}

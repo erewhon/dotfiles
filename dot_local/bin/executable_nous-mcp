@@ -1,0 +1,23 @@
+#!/bin/sh
+# nous-mcp from any directory: the Nous MCP tools as a shell command.
+#
+#   nous-mcp tools [QUERY] [--json]        list tools (no daemon needed)
+#   nous-mcp call TOOL '{"arg": ...}'      call one; JSON result on stdout, exit 1 on a tool error
+#   nous-mcp call TOOL @FILE | -            args from a file / stdin
+#
+# The real entry point lives in the nous checkout (nous-py/nous_mcp/server.py main()).
+# `call` needs the hosted-Nous environment; on euclid that comes from the same
+# with-nous-env.sh the MCP gateway uses (PAT via `ho secret`). An already-set
+# NOUS_API_KEY wins, so a shell that exported its own env is left alone.
+set -eu
+NOUS_PY="${NOUS_PY:-$HOME/code/erewhon/nous/nous-py}"
+ENV_WRAPPER="$HOME/code/erewhon/homeops/config/euclid/mcp-gateway/with-nous-env.sh"
+
+if [ ! -d "$NOUS_PY" ]; then
+  echo "nous-mcp: no nous checkout at $NOUS_PY (set NOUS_PY)" >&2
+  exit 2
+fi
+if [ -z "${NOUS_API_KEY:-}" ] && [ -x "$ENV_WRAPPER" ]; then
+  exec "$ENV_WRAPPER" uv run --quiet --directory "$NOUS_PY" nous-mcp "$@"
+fi
+exec uv run --quiet --directory "$NOUS_PY" nous-mcp "$@"
