@@ -1,0 +1,12 @@
+# Pi coding-agent packages (`pi install <source>` syntax), one per line.
+# Owned by dotfiles: dot_pi/agent/modify_settings.json writes this list
+# into ~/.pi/agent/settings.json `packages`, and run_onchange_33-pi-packages.sh
+# installs any that are missing from ~/.pi/agent/npm. Add or remove here, not
+# with `pi install` / `pi remove` (pi would win locally, chezmoi on next apply).
+
+# Structured questions back to the user (interactive sessions only).
+npm:@juicesharp/rpiv-ask-user-question
+# web_search / fetch_content / source_check; zero-config search goes via Exa MCP.
+npm:pi-web-access
+# Powerline bar, welcome overlay, Alt+S stash, /cd, /reply, bash mode.
+npm:pi-powerline-footer

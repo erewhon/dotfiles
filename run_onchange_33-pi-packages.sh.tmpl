@@ -1,0 +1,36 @@
+#!/bin/sh
+# {{ include "dot_config/packages/pi-packages.txt" | sha256sum }}
+# Install pi packages that pi-packages.txt lists but ~/.pi/agent/npm lacks.
+# The settings.json `packages` entry itself is written by
+# dot_pi/agent/modify_settings.json; this only fetches the code.
+
+set -e
+
+if ! command -v pi >/dev/null 2>&1; then
+    echo "[33-pi-packages] pi not found, skipping"
+    exit 0
+fi
+
+PI_NPM_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/npm/node_modules"
+
+echo "[33-pi-packages] checking pi packages..."
+
+while IFS= read -r line; do
+    line=$(echo "$line" | sed 's/#.*//' | xargs)
+    [ -z "$line" ] && continue
+    case "$line" in
+        npm:*)
+            # npm:@scope/name@1.2.3 -> @scope/name ; npm:name@^1 -> name
+            name=${line#npm:}
+            name=$(echo "$name" | sed -E 's/^(@[^/]+\/[^@]+|[^@]+).*/\1/')
+            if [ -d "$PI_NPM_DIR/$name" ]; then
+                echo "  present   $line"
+                continue
+            fi
+            ;;
+    esac
+    echo "  installing $line"
+    pi install "$line" || echo "  warning: failed to install $line"
+done < "$HOME/.config/packages/pi-packages.txt"
+
+echo "[33-pi-packages] done"

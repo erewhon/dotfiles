@@ -1,0 +1,22 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /*
+pi owns ~/.pi/agent/settings.json (theme, default model, lastChangelogVersion,
+and it rewrites the file on every change), so the whole file can't be a
+managed copy. This modify template pins only `packages` to
+dot_config/packages/pi-packages.txt and passes everything else through.
+When the list already matches, stdin is echoed byte-for-byte so pi's own
+formatting is left alone and `chezmoi status` stays quiet.
+*/ -}}
+{{- $want := list -}}
+{{- range (include "dot_config/packages/pi-packages.txt" | splitList "\n") -}}
+{{-   $line := regexReplaceAll "#.*" . "" | trim -}}
+{{-   if $line }}{{ $want = append $want $line }}{{ end -}}
+{{- end -}}
+{{- $cur := dict -}}
+{{- if trim .chezmoi.stdin }}{{ $cur = .chezmoi.stdin | fromJson }}{{ end -}}
+{{- if deepEqual (get $cur "packages") $want -}}
+{{ .chezmoi.stdin }}
+{{- else -}}
+{{- $_ := set $cur "packages" $want -}}
+{{ $cur | toPrettyJson }}
+{{- end -}}
