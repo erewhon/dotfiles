@@ -11,6 +11,11 @@ README.md
 # pi loads every *.ts under extensions/ as an extension; the bun tests next to
 # them stay in the source tree.
 .pi/agent/extensions/*.test.ts
+# router-session.ts is a symlink into the pitf checkout (it tags router requests
+# with the Pi session id); hosts without smithy/pitf have nothing to point at.
+{{ if not (stat (joinPath .chezmoi.homeDir "code/smithy/pitf/contrib/pi/router-session.ts")) }}
+.pi/agent/extensions/router-session.ts
+{{ end }}
 
 # Host classification: defaults < catalog entry < [data.host_overrides] in chezmoi.toml
 {{ $host := includeTemplate "host-profile" . | fromJson }}
