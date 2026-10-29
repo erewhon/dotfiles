@@ -36,6 +36,11 @@ disabled = true
 style = 'bold blue'
 symbol = " "
 
+# The default symbol "☁️" carries a VS16 variation selector: zsh measures it as
+# 1 column, Kitty renders it as 2, so RPROMPT overflows and wraps while typing.
+[gcloud]
+symbol = "󰅟 "
+
 [golang]
 format = '[ ](bold cyan)'
 

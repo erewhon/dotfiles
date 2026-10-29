@@ -33,7 +33,6 @@ path=(
     ~/.cargo/bin
     ~/.config/doom-emacs/bin
     ~/.krew/bin
-    ~/.rd/bin
     /usr/local/bin
     /usr/local/sbin
     /snap/bin
