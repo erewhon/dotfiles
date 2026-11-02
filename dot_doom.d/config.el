@@ -107,7 +107,19 @@
   (font-lock-flush)
   (message "Markdown block rendering %s" (if +org-render-markdown-blocks "on" "off")))
 (after! org
-  (add-to-list 'org-src-lang-modes '("md" . markdown)))
+  (add-to-list 'org-src-lang-modes '("md" . markdown))
+  ;; Org re-fontifies a block by clearing only `face', so `org-src-invisible'
+  ;; (the copied hidden markup) goes stale, and text typed after a hidden
+  ;; closing `_' or `**' inherits it and vanishes.  Clear it on each pass and
+  ;; don't let it stick to inserted text.
+  (defadvice! +org-src--clear-stale-invisible-a (_lang start end)
+    :before #'org-src-font-lock-fontify-block
+    (with-silent-modifications
+      (remove-text-properties start end '(org-src-invisible nil))))
+  (add-hook! 'org-mode-hook
+    (defun +org-src-invisible-nonsticky-h ()
+      (setq-local text-property-default-nonsticky
+                  (cons '(org-src-invisible . t) text-property-default-nonsticky)))))
 
 ;;;
 ;;; Org-mode tweaking
