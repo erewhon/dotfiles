@@ -87,6 +87,28 @@
 (setq org-src-fontify-natively t)   ;; Syntax highlight source blocks!
 (setq org-startup-with-inline-images t)
 
+;; Render #+begin_src markdown blocks: hide markup (**, `, link URLs) the way
+;; org-hide-emphasis-markers does for Org.  Org fontifies src blocks in a hidden
+;; " *org-src-fontification:<mode>*" buffer and copies `invisible' props back,
+;; so turn on markup hiding only there.  C-c ' still edits the raw markdown.
+(defvar +org-render-markdown-blocks t)
+(add-hook! 'markdown-mode-hook
+  (defun +org-src-markdown-hide-markup-h ()
+    (when (and +org-render-markdown-blocks
+               (string-prefix-p " *org-src-fontification:" (buffer-name)))
+      (markdown-toggle-markup-hiding 1))))
+(defun +org/toggle-markdown-block-rendering ()
+  "Toggle rendered vs. raw display of markdown src blocks."
+  (interactive)
+  (setq +org-render-markdown-blocks (not +org-render-markdown-blocks))
+  (dolist (buf (buffer-list))
+    (when (string-match-p "\\` \\*org-src-fontification:\\(gfm\\|markdown\\)" (buffer-name buf))
+      (kill-buffer buf)))
+  (font-lock-flush)
+  (message "Markdown block rendering %s" (if +org-render-markdown-blocks "on" "off")))
+(after! org
+  (add-to-list 'org-src-lang-modes '("md" . markdown)))
+
 ;;;
 ;;; Org-mode tweaking
 ;;;
