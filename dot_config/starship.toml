@@ -5,7 +5,7 @@ format = """$directory$character"""
 palette = "catppuccin_mocha"
 # Explicit list rather than $all: $all grows (language versions, cloud
 # context, ...) until zsh drops RPROMPT entirely in deep directories.
-right_format = """$username$hostname$git_branch$git_status$cmd_duration$container"""
+right_format = """$username$hostname$git_branch${custom.git_dirty}${custom.jj}$cmd_duration$container"""
 command_timeout = 1000
 
 [cmd_duration]
@@ -26,18 +26,35 @@ truncation_length = 8
 truncate_to_repo = false
 truncation_symbol = "…/"
 
+# only_attached: colocated jj repos leave git HEAD detached, so the branch
+# hides there and custom.jj takes over.
 [git_branch]
+only_attached = true
 format =  '[$symbol$branch(:$remote_branch)]($style) '
 
-[git_status]
-untracked = '  ?${count}'
-stashed = ' ${count}'
-modified = ' ~${count}'
-staged = '[++\($count\)](green)'
-ahead = "⇡${count}"
-diverged = "⇕⇡${ahead_count}⇣${behind_count}"
-behind = "⇣${count}"
-format = '\[[$ahead_behind $all_status]($style)\] '
+# A single dirty marker instead of git_status's per-category counts.
+[custom.git_dirty]
+description = "● when the git work tree has changes (not in jj repos)"
+require_repo = true
+shell = ["sh"]
+when = '! jj --ignore-working-copy root >/dev/null 2>&1 && test -n "$(git status --porcelain --ignore-submodules 2>/dev/null | head -c1)"'
+format = '[●]($style) '
+style = "bold red"
+
+# jj: nearest bookmark, working-copy change id, and ● if @ has changes.
+# The first jj call snapshots the working copy so ● reflects unsaved edits.
+[custom.jj]
+description = "jj bookmark / change id / dirty marker"
+shell = ["sh"]
+when = "jj --ignore-working-copy root >/dev/null 2>&1"
+command = """
+c=$(jj log --no-graph --color never -r @ -T 'change_id.shortest(4) ++ if(!empty, " ●")')
+b=$(jj log --ignore-working-copy --no-graph --color never -r 'latest(::@ & bookmarks())' -T 'local_bookmarks.map(|b| b.name()).join(",")')
+printf '%s' "${b:+$b }$c"
+"""
+symbol = "󱗆 "
+style = "bold purple"
+format = '[$symbol$output]($style) '
 
 [aws]
 format = '[$symbol(profile: "$profile" )(\(region: $region\) )]($style)'
