@@ -7,6 +7,8 @@ palette = "catppuccin_mocha"
 # context, ...) until zsh drops RPROMPT entirely in deep directories.
 right_format = """$username$hostname$git_branch${custom.git_dirty}${custom.jj}$cmd_duration$container"""
 command_timeout = 1000
+# Directory scan for language detection; the 30ms default trips on a cold NFS cache.
+scan_timeout = 100
 
 [cmd_duration]
 min_time = 0
