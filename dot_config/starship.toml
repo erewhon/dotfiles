@@ -3,14 +3,23 @@ format = """$directory$character"""
 # Simplified prompt:
 # format = """$character"""
 palette = "catppuccin_mocha"
-# Comment out below for further simplification
-right_format = """$all"""
+# Explicit list rather than $all: $all grows (language versions, cloud
+# context, ...) until zsh drops RPROMPT entirely in deep directories.
+right_format = """$username$hostname$git_branch$git_status$cmd_duration$container"""
 command_timeout = 1000
 
 [cmd_duration]
 min_time = 0
 show_milliseconds = true
-format = ' [$duration]($style)'
+format = '[$duration]($style) '
+
+# Compact user@host, shown only over ssh (or as root)
+[username]
+format = '[$user]($style)'
+
+[hostname]
+ssh_symbol = ""
+format = '[@$hostname]($style) '
 
 [directory]
 truncation_length = 8

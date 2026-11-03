@@ -9,6 +9,10 @@ if [[ -f "$ZINIT_HOME/zinit.zsh" ]]; then
     # OMZ git lib provides git_current_branch (used by ggpull/ggpush etc.)
     zinit snippet OMZL::git.zsh
 
+    # Keep the aws plugin's aliases/completions but not its "<aws:…> <region:…>"
+    # RPROMPT prefix, which crowds out starship's right prompt.
+    SHOW_AWS_PROMPT=false
+
     # Turbo-loaded omz plugins (aliases & completions)
     zinit wait lucid for \
         OMZP::aws \
