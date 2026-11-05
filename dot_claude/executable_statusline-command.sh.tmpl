@@ -2,7 +2,7 @@
 # Claude Code status line script (managed by chezmoi)
 #
 # Line 1: user@host  path  branch  model:effort
-# Line 2: context temperature bar, context %, tokens, rate limits
+# Line 2: context temperature bar, context %, tokens, 7-day rate limit
 #
 # Test with mock input:
 #   echo '{"model":{"display_name":"Opus"},"cwd":"/tmp","context_window":{"used_percentage":37,"total_input_tokens":369000,"context_window_size":1000000}}' | ~/.claude/statusline-command.sh
@@ -13,7 +13,7 @@ input=$(cat)
 # tab is IFS whitespace, so `read` would collapse empty fields and shift
 # every later value into the wrong variable.
 IFS=$'\x1f' read -r cwd model output_style effort used_pct used_tokens ctx_size \
-  rate_5h resets_5h rate_7d resets_7d < <(
+  rate_7d resets_7d < <(
   echo "$input" | jq -r '[
     (.workspace.current_dir // .cwd // ""),
     (.model.display_name // ""),
@@ -22,8 +22,6 @@ IFS=$'\x1f' read -r cwd model output_style effort used_pct used_tokens ctx_size 
     (.context_window.used_percentage // ""),
     (.context_window.total_input_tokens // ""),
     (.context_window.context_window_size // ""),
-    (.rate_limits.five_hour.used_percentage // ""),
-    (.rate_limits.five_hour.resets_at // ""),
     (.rate_limits.seven_day.used_percentage // ""),
     (.rate_limits.seven_day.resets_at // "")
   ] | map(tostring) | join("\u001f")'
@@ -129,7 +127,6 @@ rate_segment() {
   printf '%s%s:%s\033[1;38;5;%sm%d%%%s' "$dim" "$label" "$reset" "$(ramp_color "$pct")" "$pct" "$reset"
   [ -n "$left" ] && printf ' %s↻%s%s' "$dim" "$left" "$reset"
 }
-rate_5h_segment=$(rate_segment 5h "$rate_5h" "$resets_5h")
 rate_7d_segment=$(rate_segment 7d "$rate_7d" "$resets_7d")
 {{ end -}}
 
@@ -152,7 +149,7 @@ printf '\n'
 # Line 2: meters
 line2="$context_segment"
 {{ if $host.is_personal -}}
-for seg in "$rate_5h_segment" "$rate_7d_segment"; do
+for seg in "$rate_7d_segment"; do
   [ -z "$seg" ] && continue
   [ -n "$line2" ] && line2+="  "
   line2+="$seg"
