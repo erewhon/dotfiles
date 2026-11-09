@@ -155,6 +155,7 @@ def main():
         # Parse command line arguments
         parser = argparse.ArgumentParser()
         parser.add_argument('--chat', action='store_true', help='Dump transcript to ~/code/chats/<project>/')
+        parser.add_argument('--tts', action='store_true', help='Announce completion via TTS')
         args = parser.parse_args()
 
         # Read JSON input from stdin
@@ -184,8 +185,9 @@ def main():
                 except Exception:
                     pass  # Fail silently
 
-        # Announce completion via TTS
-        announce_completion()
+        # Announce completion via TTS (opt-in)
+        if args.tts:
+            announce_completion()
 
         sys.exit(0)
 

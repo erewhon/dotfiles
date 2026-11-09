@@ -1,4 +1,4 @@
-{{- /* Fable is only available at home: the model pin and its effort override are personal-only. */ -}}
+{{- /* The model pin and the Fable effort override are personal-only (Fable is only available at home). */ -}}
 {{- $host := includeTemplate "host-profile" . | fromJson -}}
 {
   "cleanupPeriodDays": 365,
@@ -37,7 +37,7 @@
     ]
   },
 {{- if $host.is_personal }}
-  "model": "fable",
+  "model": "opus",
 {{- end }}
   "hooks": {
     "SessionStart": [
@@ -49,6 +49,12 @@
             "command": "$HOME/.local/bin/meta themes --brief 2>/dev/null || true",
             "timeout": 10,
             "statusMessage": "Loading weekly themes"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/meta facets --brief --no-commits 2>/dev/null || true",
+            "timeout": 10,
+            "statusMessage": "Checking facets"
           }
         ]
       }
@@ -69,6 +75,16 @@
           {
             "type": "command",
             "command": "curl -sX POST http://localhost:8070/api/webhook -H 'Content-Type: application/json' -d \"{\\\"session\\\":\\\"$(tmux display-message -p '#{session_name}' 2>/dev/null)\\\",\\\"agent_type\\\":\\\"claude\\\",\\\"status\\\":\\\"idle\\\",\\\"session_id\\\":\\\"$(jq -r '.session_id // empty' 2>/dev/null)\\\"}\" &>/dev/null &"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/inbox-stop.sh",
+            "timeout": 10
           }
         ]
       }
@@ -127,7 +143,7 @@
     "claude-mem@thedotmack": true,
     "typescript-lsp@claude-plugins-official": true,
     "filetree@claude-code-filetree": true,
-    "blast-radius@claude-code-playground-mods": true,
+    "blast-radius@claude-code-playground-mods": false,
     "replay-theater@claude-code-playground-mods": true,
     "savvy-progress@claude-kit": true
   },
