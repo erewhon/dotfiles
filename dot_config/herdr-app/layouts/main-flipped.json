@@ -151,6 +151,25 @@
               "min": 280,
               "max": 900,
               "hidden": true
+            },
+            {
+              "id": "journal",
+              "type": "column",
+              "children": [
+                {
+                  "id": "journal-body-block",
+                  "type": "block",
+                  "content": {
+                    "mod": "journal"
+                  }
+                }
+              ],
+              "size": {
+                "px": 420
+              },
+              "min": 280,
+              "max": 900,
+              "hidden": true
             }
           ],
           "padding": 8,
