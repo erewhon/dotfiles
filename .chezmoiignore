@@ -8,6 +8,27 @@ README.md
 **/lazy-lock.json
 **/.DS_Store
 **/*.backup
+# Herdr rewrites these on every start or while it runs (docs, type files,
+# shipped frame/icons, window and view state). Only our own layouts/mods and
+# settings belong in the repo.
+.config/herdr-app/AGENTS.md
+.config/herdr-app/*.d.ts
+.config/herdr-app/*.sock
+.config/herdr-app/*.error
+.config/herdr-app/frame
+.config/herdr-app/icons
+.config/herdr-app/data
+.config/herdr-app/telemetry
+.config/herdr-app/layouts/.state
+.config/herdr-app/mods/*/gpui-kit.d.ts
+.config/herdr-app/mods/*/jsconfig.json
+.config/herdr-app/view.json
+.config/herdr-app/shared.json
+.config/herdr-app/seen.json
+.config/herdr-app/installed.json
+.config/herdr-app/window.json
+.config/herdr-app/windows.json
+.config/herdr-app/update-notes*
 # pi loads every *.ts under extensions/ as an extension; the bun tests next to
 # them stay in the source tree.
 .pi/agent/extensions/*.test.ts
