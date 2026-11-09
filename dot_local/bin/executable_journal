@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# journal — per-project, out-of-tree work journal for agents.
+#
+#   journal add -t "title" [-s STATUS] [-C DIR] < body   append an entry to today's file
+#   journal path [-C DIR]                                 print today's journal path
+#   journal slug [-C DIR]                                 print the project slug
+#   journal show [-C DIR] [-n N]                          tail today's file (default 60 lines)
+#   journal today                                         tail today's file for every project
+#
+# Slug = project root with leading "/" stripped and "/" -> "_" (same as ~/code/chats).
+# Project root = jj root, else git toplevel, else the directory itself.
+set -euo pipefail
+
+JOURNAL_HOME="${JOURNAL_HOME:-$HOME/code/journals}"
+
+usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+
+project_root() {
+    local dir="$1"
+    ( cd "$dir" && jj root 2>/dev/null ) \
+    || ( cd "$dir" && git rev-parse --show-toplevel 2>/dev/null ) \
+    || ( cd "$dir" && pwd -P )
+}
+
+slug_for() {
+    project_root "$1" | sed -e 's#^/##' -e 's#/#_#g'
+}
+
+path_for() {
+    printf '%s/%s/%s.md\n' "$JOURNAL_HOME" "$(slug_for "$1")" "$(date +%F)"
+}
+
+cmd="${1:-}"; [ $# -gt 0 ] && shift || true
+dir="$PWD"; title=""; status=""; lines=60
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -C) dir="$2"; shift 2 ;;
+        -t) title="$2"; shift 2 ;;
+        -s) status="$2"; shift 2 ;;
+        -n) lines="$2"; shift 2 ;;
+        -h|--help) usage ;;
+        *) echo "journal: unknown argument: $1" >&2; usage 1 ;;
+    esac
+done
+
+case "$cmd" in
+    add)
+        [ -n "$title" ] || { echo "journal add: -t TITLE is required" >&2; exit 1; }
+        file="$(path_for "$dir")"
+        mkdir -p "$(dirname "$file")"
+        {
+            [ -s "$file" ] && printf '\n'
+            printf '## %s  %s\n' "$(date +%H:%M)" "$title"
+            [ -n "$status" ] && printf '**Status:** %s\n' "$status"
+            cat
+        } >> "$file"
+        echo "$file"
+        ;;
+    path) path_for "$dir" ;;
+    slug) slug_for "$dir" ;;
+    show)
+        file="$(path_for "$dir")"
+        [ -f "$file" ] && tail -n "$lines" "$file" || echo "journal: no entries today ($file)" >&2
+        ;;
+    today)
+        shopt -s nullglob
+        for f in "$JOURNAL_HOME"/*/"$(date +%F).md"; do
+            printf '===== %s\n' "$f"; tail -n "$lines" "$f"; printf '\n'
+        done
+        ;;
+    ""|-h|--help) usage ;;
+    *) echo "journal: unknown command: $cmd" >&2; usage 1 ;;
+esac
