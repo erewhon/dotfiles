@@ -17,6 +17,10 @@ Formats (auto-detected):
           the trial's result.json.
   pi      pi (pi.dev) session .jsonl (~/.pi/agent/sessions/...)
   claude  Claude Code session .jsonl (~/.claude/projects/...)
+  cortex  Codeium Cortex step arrays (Windsurf / Google Antigravity exports):
+          steps with step_index, source, type (USER_INPUT, PLANNER_RESPONSE,
+          ...), status, created_at, *_tokens and tool_calls[{name, args}].
+          The array may be the whole document or nested under any key.
 
 Files written by shell commands (redirection, tee, sed -i, cp/mv, touch,
 Path.write_text...) are inferred heuristically and listed separately from
@@ -39,7 +43,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-Format = Literal["atif", "pi", "claude"]
+Format = Literal["atif", "pi", "claude", "cortex"]
 
 
 # ---------------------------------------------------------------- model
@@ -82,6 +86,10 @@ class Summary(BaseModel):
     reasoning_steps: int = 0
     reasoning_chars: int = 0
     branches: int = 0  # pi: abandoned branches in the entry tree
+    step_types: dict[str, int] = Field(default_factory=dict)  # cortex: raw step types
+    step_statuses: dict[str, int] = Field(
+        default_factory=dict
+    )  # cortex: non-DONE statuses
     # tools
     tool_calls: int = 0
     tools: dict[str, int] = Field(default_factory=dict)
@@ -596,6 +604,238 @@ def parse_claude(path: Path, top: int) -> Summary:
     return c.finish(top)
 
 
+# Cortex (Windsurf / Antigravity). Tool and arg names as used by those agents;
+# exports may keep enum prefixes (CORTEX_STEP_TYPE_...) or strip them.
+CORTEX_PREFIXES = (
+    "CORTEX_STEP_TYPE_",
+    "CORTEX_STEP_SOURCE_",
+    "CORTEX_STEP_STATUS_",
+    "STEP_TYPE_",
+    "STEP_STATUS_",
+)
+CORTEX_READ = {
+    "view_file",
+    "view_file_outline",
+    "view_code_item",
+    "read_file",
+    "view_content_chunk",
+}
+CORTEX_EDIT = {
+    "replace_file_content",
+    "multi_replace_file_content",
+    "edit_file",
+    "propose_code",
+    "apply_edit",
+}
+CORTEX_WRITE = {"write_to_file", "create_file"}
+CORTEX_PATH_ARGS = (
+    "TargetFile",
+    "AbsolutePath",
+    "FilePath",
+    "File",
+    "Path",
+    "file_path",
+    "path",
+)
+CORTEX_CMD_ARGS = ("CommandLine", "Command", "command", "command_line")
+CORTEX_FAIL = {
+    "ERROR",
+    "FAILED",
+    "FAILURE",
+    "CANCELED",
+    "CANCELLED",
+    "INTERRUPTED",
+    "HALTED",
+    "TIMEOUT",
+}
+# step types that are the result of a tool, keyed to the tool that produced them
+CORTEX_RESULT_TOOL = {
+    "RUN_COMMAND": "run_command",
+    "COMMAND_STATUS": "command_status",
+    "VIEW_FILE": "view_file",
+    "VIEW_FILE_OUTLINE": "view_file_outline",
+    "VIEW_CODE_ITEM": "view_code_item",
+    "CODE_ACTION": "replace_file_content",
+    "WRITE_TO_FILE": "write_to_file",
+    "GREP_SEARCH": "grep_search",
+    "FIND": "find_by_name",
+    "LIST_DIRECTORY": "list_dir",
+    "READ_URL_CONTENT": "read_url_content",
+    "SEARCH_WEB": "search_web",
+}
+
+
+def cortex_norm(value: Any) -> str:
+    v = str(value or "").upper()
+    for prefix in CORTEX_PREFIXES:
+        if v.startswith(prefix):
+            return v[len(prefix) :]
+    return v
+
+
+def cortex_steps(doc: Any) -> list[dict[str, Any]] | None:
+    """Find the step array anywhere in the document (breadth-first)."""
+    queue: list[Any] = [doc]
+    while queue:
+        node = queue.pop(0)
+        if isinstance(node, list):
+            dicts = [x for x in node if isinstance(x, dict)]
+            if (
+                dicts
+                and sum(
+                    "type" in d and ("step_index" in d or "source" in d) for d in dicts
+                )
+                >= len(dicts) / 2
+            ):
+                return dicts
+            queue.extend(x for x in node if isinstance(x, (dict, list)))
+        elif isinstance(node, dict):
+            queue.extend(v for v in node.values() if isinstance(v, (dict, list)))
+    return None
+
+
+def first_key(d: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for k in keys:
+        if d.get(k) not in (None, ""):
+            return d[k]
+    return None
+
+
+def num(d: dict[str, Any], *keys: str) -> int:
+    v = first_key(d, keys)
+    try:
+        return int(v or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def parse_cortex(path: Path, top: int) -> Summary:
+    doc = json.loads(path.read_text())
+    steps = cortex_steps(doc) or []
+    c = Collector(path, "cortex")
+    s = c.s
+    s.agent = "cortex"
+    if isinstance(doc, dict):
+        s.session_id = first_key(
+            doc,
+            (
+                "trajectory_id",
+                "trajectoryId",
+                "cascade_id",
+                "cascadeId",
+                "conversation_id",
+                "id",
+            ),
+        )
+        model = first_key(doc, ("model", "model_name", "modelName"))
+        if isinstance(model, str):
+            c.models[model] += 0
+        s.cwd = first_key(doc, ("workspace", "cwd", "workspace_path", "workspacePath"))
+    types: Counter[str] = Counter()
+    statuses: Counter[str] = Counter()
+    open_calls: dict[
+        str, list[ToolCall]
+    ] = {}  # tool name -> calls awaiting a result step
+    for step in sorted(
+        steps,
+        key=lambda d: (
+            d.get("step_index", 0) if isinstance(d.get("step_index"), int) else 0
+        ),
+    ):
+        c.when(
+            first_key(step, ("created_at", "createdAt", "timestamp", "completed_at"))
+        )
+        kind = cortex_norm(step.get("type"))
+        status = cortex_norm(step.get("status")) or "DONE"
+        source = cortex_norm(step.get("source"))
+        types[kind] += 1
+        if status != "DONE":
+            statuses[status] += 1
+        failed = status in CORTEX_FAIL or bool(step.get("error"))
+        if (
+            kind == "USER_INPUT"
+            or source.startswith("USER")
+            and kind != "PLANNER_RESPONSE"
+        ):
+            s.user_messages += kind == "USER_INPUT" or source.startswith("USER")
+            continue
+        if kind == "PLANNER_RESPONSE" or (source == "MODEL" and "tool_calls" in step):
+            s.agent_steps += 1
+            model = first_key(step, ("model", "model_name", "modelName"))
+            if isinstance(model, str):
+                c.models[model] += 1
+            c.usage(
+                num(step, "input_tokens", "inputTokens", "prompt_tokens"),
+                num(step, "output_tokens", "outputTokens", "completion_tokens"),
+                num(step, "cache_read_tokens", "cacheReadTokens", "cached_tokens"),
+                num(
+                    step,
+                    "cache_write_tokens",
+                    "cacheWriteTokens",
+                    "cache_creation_tokens",
+                ),
+                num(step, "thinking_tokens", "reasoning_tokens", "thinkingTokens"),
+            )
+            thinking = first_key(
+                step, ("thinking", "reasoning", "thinking_content", "reasoning_content")
+            )
+            if thinking:
+                s.reasoning_steps += 1
+                s.reasoning_chars += len(text_of(thinking))
+            text = first_key(step, ("content", "response", "text", "message"))
+            if text and text_of(text).strip():
+                s.final_message = text_of(text)
+            if step.get("stop_reason") or step.get("stopReason"):
+                c.stops[str(step.get("stop_reason") or step.get("stopReason"))] += 1
+            calls = step.get("tool_calls") or step.get("toolCalls") or []
+            s.steps_with_tools += bool(calls)
+            s.steps_without_tools += not calls
+            for call in calls:
+                name = str(call.get("name") or call.get("function_name") or "?")
+                args = (
+                    call.get("args") or call.get("arguments") or call.get("input") or {}
+                )
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {}
+                cmd = (
+                    first_key(args, CORTEX_CMD_ARGS)
+                    if name in ("run_command", "send_command_input")
+                    else None
+                )
+                action = (
+                    "read" if name in CORTEX_READ
+                    else "edit" if name in CORTEX_EDIT
+                    else "write" if name in CORTEX_WRITE
+                    else "other"
+                )  # fmt: skip
+                p = first_key(args, CORTEX_PATH_ARGS) if action != "other" else None
+                tc = ToolCall(
+                    name=name,
+                    command=cmd if isinstance(cmd, str) else None,
+                    path=p,
+                    action=action,
+                    error=failed,
+                )  # type: ignore[arg-type]
+                c.calls.append(tc)
+                open_calls.setdefault(name, []).append(tc)
+            continue
+        # anything else is a tool-result / system step: pair failures with the call
+        tool = CORTEX_RESULT_TOOL.get(kind, kind.lower())
+        exit_code = first_key(step, ("exit_code", "exitCode"))
+        if isinstance(exit_code, int) and exit_code != 0:
+            failed = True
+        pending = open_calls.get(tool) or []
+        if pending:
+            tc = pending.pop(0)
+            tc.error = tc.error or failed
+    s.step_types = dict(types.most_common())
+    s.step_statuses = dict(statuses.most_common())
+    return c.finish(top)
+
+
 # ---------------------------------------------------------------- discovery
 
 
@@ -606,7 +846,15 @@ def detect(path: Path) -> Format | None:
     except (OSError, UnicodeDecodeError):
         return None
     if path.suffix == ".json":
-        return "atif" if '"schema_version"' in head and "ATIF" in head else None
+        if '"schema_version"' in head and "ATIF" in head:
+            return "atif"
+        if (
+            '"step_index"' in head
+            or "PLANNER_RESPONSE" in head
+            or "CORTEX_STEP" in head
+        ):
+            return "cortex"
+        return None
     first = head.splitlines()[0] if head else ""
     try:
         obj = json.loads(first)
@@ -628,7 +876,7 @@ def expand(paths: list[Path]) -> list[tuple[Path, Format]]:
     out: list[tuple[Path, Format]] = []
     for p in paths:
         candidates = (
-            sorted(p.rglob("trajectory.json")) + sorted(p.rglob("*.jsonl"))
+            sorted(p.rglob("*.json")) + sorted(p.rglob("*.jsonl"))
             if p.is_dir()
             else [p]
         )
@@ -641,7 +889,12 @@ def expand(paths: list[Path]) -> list[tuple[Path, Format]]:
     return out
 
 
-PARSERS = {"atif": parse_atif, "pi": parse_pi, "claude": parse_claude}
+PARSERS = {
+    "atif": parse_atif,
+    "pi": parse_pi,
+    "claude": parse_claude,
+    "cortex": parse_cortex,
+}
 
 
 # ---------------------------------------------------------------- output
@@ -691,6 +944,12 @@ def show_detail(s: Summary, top: int) -> None:
             else "content redacted"
         )
         print(f"  reasoning   {s.reasoning_steps} steps, {chars}")
+    if s.step_types:
+        print("  step types  " + ", ".join(f"{k} {v}" for k, v in s.step_types.items()))
+    if s.step_statuses:
+        print(
+            "  not DONE    " + ", ".join(f"{k} {v}" for k, v in s.step_statuses.items())
+        )
     print(
         f"  tool calls  {s.tool_calls}: "
         + ", ".join(f"{k} {v}" for k, v in s.tools.items())
