@@ -1,0 +1,823 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pydantic>=2"]
+# ///
+"""trajsum: summarize coding-agent trajectories and session transcripts.
+
+    trajsum FILE                     detailed summary of one run
+    trajsum FILE... | DIR...         one row per run, plus totals
+    trajsum --json FILE...           machine-readable (one object per run)
+    trajsum --detail DIR             full summary for every run in DIR
+    trajsum --top 20 FILE            longer command / file lists
+
+Formats (auto-detected):
+  atif    Harbor `agent/trajectory.json` (ATIF, e.g. terminus-2). A Harbor
+          job or trial directory works too; reward and exception come from
+          the trial's result.json.
+  pi      pi (pi.dev) session .jsonl (~/.pi/agent/sessions/...)
+  claude  Claude Code session .jsonl (~/.claude/projects/...)
+
+Files written by shell commands (redirection, tee, sed -i, cp/mv, touch,
+Path.write_text...) are inferred heuristically and listed separately from
+files changed by real edit/write tools.
+"""
+
+from __future__ import annotations
+
+import argparse
+import itertools
+import json
+import os
+import re
+import shlex
+import sys
+from collections import Counter
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+Format = Literal["atif", "pi", "claude"]
+
+
+# ---------------------------------------------------------------- model
+
+
+class ToolCall(BaseModel):
+    name: str
+    command: str | None = None  # shell command, if this call runs one
+    path: str | None = None  # file path, if this call reads/edits/writes one
+    action: Literal["read", "edit", "write", "other"] = "other"
+    error: bool = False
+
+
+class Tokens(BaseModel):
+    input: int = 0
+    output: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
+    reasoning: int = 0
+    peak_context: int = 0
+    cost_usd: float = 0.0
+
+
+class Summary(BaseModel):
+    file: str
+    format: Format
+    session_id: str | None = None
+    agent: str | None = None
+    models: list[str] = Field(default_factory=list)
+    cwd: str | None = None
+    started: str | None = None
+    ended: str | None = None
+    duration_s: float | None = None  # first to last event
+    active_s: float | None = None  # same, minus idle gaps over IDLE_GAP_S
+    # turns
+    agent_steps: int = 0  # LLM responses
+    user_messages: int = 0
+    steps_with_tools: int = 0
+    steps_without_tools: int = 0
+    reasoning_steps: int = 0
+    reasoning_chars: int = 0
+    branches: int = 0  # pi: abandoned branches in the entry tree
+    # tools
+    tool_calls: int = 0
+    tools: dict[str, int] = Field(default_factory=dict)
+    tool_errors: int = 0
+    tool_errors_by_tool: dict[str, int] = Field(default_factory=dict)
+    parse_errors: int = 0  # ATIF: "Previous response had parsing errors"
+    parse_error_kinds: dict[str, int] = Field(default_factory=dict)
+    stop_reasons: dict[str, int] = Field(default_factory=dict)
+    # commands
+    commands: int = 0
+    unique_commands: int = 0
+    failed_commands: int = 0
+    command_heads: dict[str, int] = Field(default_factory=dict)  # first word
+    top_commands: list[str] = Field(default_factory=list)
+    # files
+    files_read: list[str] = Field(default_factory=list)
+    files_edited: list[str] = Field(default_factory=list)
+    files_written: list[str] = Field(default_factory=list)  # write/create tool
+    files_shell_written: list[str] = Field(default_factory=list)  # heuristic
+    files_shell_deleted: list[str] = Field(default_factory=list)  # heuristic
+    edit_ops: int = 0
+    # usage
+    tokens: Tokens = Field(default_factory=Tokens)
+    # harbor trial result
+    reward: float | None = None
+    exception: str | None = None
+    final_message: str | None = None
+
+
+# ---------------------------------------------------------------- helpers
+
+
+def ts(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value / (1000 if value > 1e11 else 1), tz=UTC)
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def text_of(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(text_of(c) for c in content)
+    if isinstance(content, dict):
+        for k in ("text", "content", "output"):
+            if k in content:
+                return text_of(content[k])
+    return ""
+
+
+PY_WRITE = re.compile(
+    r"""(?:Path\(\s*['"]([^'"]+)['"]\s*\)\.write_(?:text|bytes)|open\(\s*['"]([^'"]+)['"]\s*,\s*['"][wa])"""
+)
+HEREDOC = re.compile(
+    r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n.*?\n\s*\1\s*(?:\n|$)", re.DOTALL
+)
+OPERATORS = {";", "&&", "||", "|", "&", "(", ")", ";;", "|&"}
+WRAPPERS = {"sudo", "env", "command", "time", "nohup", "exec"}
+
+
+def tokens(cmd: str) -> list[str]:
+    """Shell tokens with operators split out; heredoc bodies dropped."""
+    body = HEREDOC.sub("\n", cmd).replace("\n", " ; ")
+    lex = shlex.shlex(body, posix=True, punctuation_chars=True)
+    lex.whitespace_split = True
+    lex.commenters = ""
+    try:
+        return list(lex)
+    except ValueError:  # unbalanced quotes: fall back to whitespace
+        return body.split()
+
+
+def shell_effects(cmd: str) -> tuple[set[str], set[str]]:
+    """Best-effort: files a shell command writes and deletes."""
+    written: set[str] = set()
+    deleted: set[str] = set()
+    for m in PY_WRITE.finditer(cmd):
+        written.add(m.group(1) or m.group(2))
+    segments: list[list[str]] = [[]]
+    toks = tokens(cmd)
+    i = 0
+    while i < len(toks):
+        t = toks[i]
+        if t in OPERATORS:
+            segments.append([])
+        elif t in (">", ">>", ">|", "&>", "&>>") and i + 1 < len(toks):
+            # `2>&1` tokenizes as '2', '>&', '1'; `2>/dev/null` as '2', '>', '/dev/null'
+            target = toks[i + 1]
+            if not target.startswith(("&", "/dev/")):
+                written.add(target)
+            if segments[-1] and segments[-1][-1].isdigit():
+                segments[-1].pop()  # fd number belongs to the redirect
+            i += 1
+        elif t in ("<", "<<", "<<<", ">&", "<&") and i + 1 < len(toks):
+            if segments[-1] and segments[-1][-1].isdigit():
+                segments[-1].pop()
+            i += 1
+        else:
+            segments[-1].append(t)
+        i += 1
+    for words in segments:
+        while words and (
+            words[0] in WRAPPERS or ("=" in words[0] and not words[0].startswith("-"))
+        ):
+            words = words[1:]
+        if not words:
+            continue
+        head = os.path.basename(words[0])
+        args = [w for w in words[1:] if not w.startswith("-")]
+        if head in ("tee", "touch"):
+            written.update(args)
+        elif head in ("cp", "mv", "install") and len(args) >= 2:
+            written.add(args[-1])
+            if head == "mv":
+                deleted.update(args[:-1])
+        elif head == "rm":
+            deleted.update(args)
+        elif head in ("sed", "perl") and any(
+            w.startswith(("-i", "-pi")) for w in words[1:]
+        ):
+            written.update(args[1:])  # args[0] is the script
+
+    def clean(paths: set[str]) -> set[str]:
+        return {
+            p
+            for p in paths
+            if p and not p.startswith("$") and "*" not in p and p not in (".", "..")
+        }
+
+    return clean(written), clean(deleted)
+
+
+def first_line(cmd: str, width: int = 100) -> str:
+    line = cmd.strip().splitlines()[0] if cmd.strip() else ""
+    more = " …" if len(cmd.strip().splitlines()) > 1 else ""
+    return (line[: width - 1] + "…" if len(line) > width else line) + more
+
+
+def command_head(cmd: str) -> str:
+    for segment in re.split(r"&&|\|\||;|\n", cmd):
+        words = segment.strip().split()
+        while words and (
+            "=" in words[0] or words[0] in ("sudo", "env", "cd", "time", "timeout")
+        ):
+            if words[0] == "cd":
+                break
+            words = words[1:] if words[0] != "timeout" else words[2:]
+        if words and words[0] != "cd":
+            return os.path.basename(words[0])
+    return "cd"
+
+
+IDLE_GAP_S = 300  # gaps longer than this (user away, resumed session) are not "active"
+CONTROL_KEYS = re.compile(r"^(C-[a-z]|Enter|Escape|q|\s*)$")
+
+
+# ---------------------------------------------------------------- collector
+
+
+class Collector:
+    def __init__(self, path: Path, fmt: Format) -> None:
+        self.s = Summary(file=str(path), format=fmt)
+        self.calls: list[ToolCall] = []
+        self.times: list[datetime] = []
+        self.models: Counter[str] = Counter()
+        self.stops: Counter[str] = Counter()
+        self.parse_kinds: Counter[str] = Counter()
+
+    def when(self, value: Any) -> None:
+        t = ts(value)
+        if t:
+            self.times.append(t)
+
+    def usage(
+        self,
+        inp: int,
+        out: int,
+        cr: int = 0,
+        cw: int = 0,
+        reasoning: int = 0,
+        cost: float = 0.0,
+    ) -> None:
+        t = self.s.tokens
+        t.input += inp
+        t.output += out
+        t.cache_read += cr
+        t.cache_write += cw
+        t.reasoning += reasoning
+        t.cost_usd += cost
+        t.peak_context = max(t.peak_context, inp + cr + cw)
+
+    def finish(self, top: int) -> Summary:
+        s = self.s
+        s.models = [m for m, _ in self.models.most_common()]
+        s.stop_reasons = dict(self.stops.most_common())
+        s.parse_error_kinds = dict(self.parse_kinds.most_common())
+        if self.times:
+            a, b = min(self.times), max(self.times)
+            s.started, s.ended = (
+                a.isoformat(timespec="seconds"),
+                b.isoformat(timespec="seconds"),
+            )
+            s.duration_s = round((b - a).total_seconds(), 1)
+            ordered = sorted(self.times)
+            gaps = ((y - x).total_seconds() for x, y in itertools.pairwise(ordered))
+            s.active_s = round(sum(g for g in gaps if g <= IDLE_GAP_S), 1)
+        s.tool_calls = len(self.calls)
+        s.tools = dict(Counter(c.name for c in self.calls).most_common())
+        s.tool_errors = sum(c.error for c in self.calls)
+        s.tool_errors_by_tool = dict(
+            Counter(c.name for c in self.calls if c.error).most_common()
+        )
+        cmds = [c for c in self.calls if c.command]
+        s.commands = len(cmds)
+        s.unique_commands = len({c.command for c in cmds})
+        s.failed_commands = sum(c.error for c in cmds)
+        s.command_heads = dict(
+            Counter(command_head(c.command or "") for c in cmds).most_common(top)
+        )
+        s.top_commands = [first_line(c.command or "") for c in cmds][:top]
+
+        def ordered(action: str) -> list[str]:
+            return list(
+                dict.fromkeys(
+                    c.path for c in self.calls if c.action == action and c.path
+                )
+            )
+
+        s.files_read = ordered("read")
+        s.files_edited = ordered("edit")
+        s.files_written = ordered("write")
+        s.edit_ops = sum(c.action == "edit" for c in self.calls)
+        tool_touched = set(s.files_edited) | set(s.files_written)
+        written: dict[str, None] = {}
+        deleted: dict[str, None] = {}
+        for c in cmds:
+            w, d = shell_effects(c.command or "")
+            written.update(dict.fromkeys(sorted(w - tool_touched)))
+            deleted.update(dict.fromkeys(sorted(d)))
+        s.files_shell_written = list(written)
+        s.files_shell_deleted = list(deleted)
+        return s
+
+
+# ---------------------------------------------------------------- parsers
+
+
+def parse_atif(path: Path, top: int) -> Summary:
+    doc = json.loads(path.read_text())
+    c = Collector(path, "atif")
+    s = c.s
+    s.session_id = doc.get("session_id")
+    agent = doc.get("agent") or {}
+    s.agent = (
+        " ".join(x for x in (agent.get("name"), agent.get("version")) if x) or None
+    )
+    if agent.get("model_name"):
+        c.models[agent["model_name"]] += 0
+    for step in doc.get("steps", []):
+        c.when(step.get("timestamp"))
+        if step.get("source") == "user":
+            s.user_messages += 1
+            continue
+        if step.get("source") != "agent":
+            continue
+        s.agent_steps += 1
+        if step.get("model_name"):
+            c.models[step["model_name"]] += 1
+        m = step.get("metrics") or {}
+        c.usage(
+            m.get("prompt_tokens") or 0,
+            m.get("completion_tokens") or 0,
+            m.get("cached_tokens") or 0,
+            0,
+            0,
+            m.get("cost_usd") or 0.0,
+        )
+        if step.get("reasoning_content"):
+            s.reasoning_steps += 1
+            s.reasoning_chars += len(step["reasoning_content"])
+        obs = text_of((step.get("observation") or {}).get("results"))
+        if "Previous response had parsing errors" in obs:
+            s.parse_errors += 1
+            kind = re.search(r"ERROR: ([^\n|:]+)", obs)
+            c.parse_kinds[(kind.group(1) if kind else "unknown").strip()[:60]] += 1
+        calls = step.get("tool_calls") or []
+        s.steps_with_tools += bool(calls)
+        s.steps_without_tools += not calls
+        for tc in calls:
+            name = tc.get("function_name") or "?"
+            args = tc.get("arguments") or {}
+            cmd = args.get("keystrokes") or args.get("command")
+            if isinstance(cmd, str) and CONTROL_KEYS.match(cmd.strip()):
+                cmd = None  # bare key presses (C-c, Enter) are not commands
+            c.calls.append(
+                ToolCall(
+                    name=name,
+                    command=cmd.rstrip("\n") if isinstance(cmd, str) else None,
+                )
+            )
+        if step.get("message"):
+            s.final_message = text_of(step["message"])
+    fm = doc.get("final_metrics") or {}
+    if fm and not s.tokens.input:  # per-step metrics missing: fall back to totals
+        c.usage(
+            fm.get("total_prompt_tokens") or 0,
+            fm.get("total_completion_tokens") or 0,
+            fm.get("total_cached_tokens") or 0,
+        )
+    trial = path.parent.parent / "result.json"  # <trial>/agent/trajectory.json
+    if trial.exists():
+        r = json.loads(trial.read_text())
+        rewards = (r.get("verifier_result") or {}).get("rewards") or {}
+        s.reward = rewards.get("reward")
+        s.exception = (r.get("exception_info") or {}).get("exception_type")
+        c.when(r.get("started_at"))
+        c.when(r.get("finished_at"))
+        s.cwd = r.get("task_name")
+    return c.finish(top)
+
+
+PI_PATH_TOOLS = {"read": "read", "edit": "edit", "write": "write"}
+
+
+def parse_pi(path: Path, top: int) -> Summary:
+    entries = [
+        json.loads(line) for line in path.read_text().splitlines() if line.strip()
+    ]
+    c = Collector(path, "pi")
+    s = c.s
+    by_id = {e["id"]: e for e in entries if e.get("id")}
+    # pi entries form a tree (edits/retries branch). Summarize the active path:
+    # walk back from the last entry; count leaves to report branches.
+    parents = {e.get("parentId") for e in entries}
+    leaves = [
+        e
+        for e in entries
+        if e.get("id") and e["id"] not in parents and e.get("type") != "session"
+    ]
+    s.branches = max(0, len(leaves) - 1)
+    active: list[dict[str, Any]] = []
+    node = entries[-1] if entries else None
+    while node is not None:
+        active.append(node)
+        node = by_id.get(node.get("parentId")) if node.get("parentId") else None
+    active.reverse()
+    header = next((e for e in entries if e.get("type") == "session"), {})
+    s.session_id, s.cwd, s.agent = header.get("id"), header.get("cwd"), "pi"
+    c.when(header.get("timestamp"))
+    pending: dict[str, ToolCall] = {}
+    for e in active if active else entries:
+        c.when(e.get("timestamp"))
+        if e.get("type") != "message":
+            continue
+        m = e.get("message") or {}
+        role = m.get("role")
+        if role == "user":
+            s.user_messages += 1
+        elif role == "bashExecution":  # user ran `!cmd` in the pi prompt
+            c.calls.append(
+                ToolCall(
+                    name="user-bash",
+                    command=m.get("command"),
+                    error=(m.get("exitCode") or 0) != 0,
+                )
+            )
+        elif role == "assistant":
+            s.agent_steps += 1
+            if m.get("model"):
+                c.models[
+                    f"{m.get('provider')}/{m['model']}"
+                    if m.get("provider")
+                    else m["model"]
+                ] += 1
+            if m.get("stopReason"):
+                c.stops[m["stopReason"]] += 1
+            u = m.get("usage") or {}
+            c.usage(
+                u.get("input") or 0,
+                u.get("output") or 0,
+                u.get("cacheRead") or 0,
+                u.get("cacheWrite") or 0,
+                u.get("reasoning") or 0,
+                (u.get("cost") or {}).get("total") or 0.0,
+            )
+            blocks = m.get("content") if isinstance(m.get("content"), list) else []
+            thinking = [b for b in blocks if b.get("type") == "thinking"]
+            if thinking:
+                s.reasoning_steps += 1
+                s.reasoning_chars += sum(len(b.get("thinking") or "") for b in thinking)
+            calls = [b for b in blocks if b.get("type") == "toolCall"]
+            s.steps_with_tools += bool(calls)
+            s.steps_without_tools += not calls
+            for b in calls:
+                args = b.get("arguments") or {}
+                name = b.get("name") or "?"
+                tc = ToolCall(
+                    name=name,
+                    command=args.get("command") if name == "bash" else None,
+                    path=args.get("path"),
+                    action=PI_PATH_TOOLS.get(name, "other"),  # type: ignore[arg-type]
+                )
+                c.calls.append(tc)
+                if b.get("id"):
+                    pending[b["id"]] = tc
+            text = "".join(
+                b.get("text") or "" for b in blocks if b.get("type") == "text"
+            )
+            if text.strip():
+                s.final_message = text
+        elif role == "toolResult":
+            tc = pending.get(m.get("toolCallId") or "")
+            if tc and m.get("isError"):
+                tc.error = True
+    return c.finish(top)
+
+
+CLAUDE_PATH_TOOLS = {
+    "Read": "read",
+    "Edit": "edit",
+    "MultiEdit": "edit",
+    "NotebookEdit": "edit",
+    "Write": "write",
+}
+
+
+def parse_claude(path: Path, top: int) -> Summary:
+    c = Collector(path, "claude")
+    s = c.s
+    s.agent = "claude-code"
+    pending: dict[str, ToolCall] = {}
+    seen_msgs: set[str] = set()
+    tool_msgs: set[str] = set()
+    stops: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        e = json.loads(line)
+        c.when(e.get("timestamp"))
+        s.session_id = s.session_id or e.get("sessionId")
+        s.cwd = s.cwd or e.get("cwd")
+        if e.get("isSidechain"):
+            continue
+        m = e.get("message") or {}
+        if e.get("type") == "user":
+            content = m.get("content")
+            if (
+                isinstance(content, str)
+                or not any(
+                    isinstance(b, dict) and b.get("type") == "tool_result"
+                    for b in content or []
+                )
+            ) and not e.get("isMeta"):
+                s.user_messages += 1
+            for b in content if isinstance(content, list) else []:
+                if (
+                    isinstance(b, dict)
+                    and b.get("type") == "tool_result"
+                    and b.get("is_error")
+                ):
+                    tc = pending.get(b.get("tool_use_id") or "")
+                    if tc:
+                        tc.error = True
+        elif e.get("type") == "assistant":
+            # one API response is split across several lines sharing message.id
+            mid = m.get("id") or e.get("uuid")
+            first = mid not in seen_msgs
+            seen_msgs.add(mid)
+            if first:
+                s.agent_steps += 1
+                if m.get("model") and m["model"] != "<synthetic>":
+                    c.models[m["model"]] += 1
+                u = m.get("usage") or {}
+                c.usage(
+                    u.get("input_tokens") or 0,
+                    u.get("output_tokens") or 0,
+                    u.get("cache_read_input_tokens") or 0,
+                    u.get("cache_creation_input_tokens") or 0,
+                )
+            if m.get("stop_reason"):
+                stops[mid] = m[
+                    "stop_reason"
+                ]  # streamed lines repeat it; keep one per response
+            for b in m.get("content") or []:
+                if b.get("type") == "thinking":
+                    s.reasoning_steps += first
+                    s.reasoning_chars += len(b.get("thinking") or "")
+                elif b.get("type") == "text" and (b.get("text") or "").strip():
+                    s.final_message = b["text"]
+                elif b.get("type") == "tool_use":
+                    inp = b.get("input") or {}
+                    name = b.get("name") or "?"
+                    tc = ToolCall(
+                        name=name,
+                        command=inp.get("command") if name == "Bash" else None,
+                        path=inp.get("file_path") or inp.get("notebook_path"),
+                        action=CLAUDE_PATH_TOOLS.get(name, "other"),  # type: ignore[arg-type]
+                    )
+                    c.calls.append(tc)
+                    pending[b.get("id") or ""] = tc
+                    tool_msgs.add(mid)
+    s.steps_with_tools = len(tool_msgs)
+    c.stops.update(stops.values())
+    s.steps_without_tools = max(0, s.agent_steps - s.steps_with_tools)
+    return c.finish(top)
+
+
+# ---------------------------------------------------------------- discovery
+
+
+def detect(path: Path) -> Format | None:
+    try:
+        with path.open() as f:
+            head = f.read(4096)
+    except (OSError, UnicodeDecodeError):
+        return None
+    if path.suffix == ".json":
+        return "atif" if '"schema_version"' in head and "ATIF" in head else None
+    first = head.splitlines()[0] if head else ""
+    try:
+        obj = json.loads(first)
+    except json.JSONDecodeError:
+        return None
+    if obj.get("type") == "session" and "version" in obj:
+        return "pi"
+    if "sessionId" in obj or obj.get("type") in (
+        "user",
+        "assistant",
+        "summary",
+        "file-history-snapshot",
+    ):
+        return "claude"
+    return None
+
+
+def expand(paths: list[Path]) -> list[tuple[Path, Format]]:
+    out: list[tuple[Path, Format]] = []
+    for p in paths:
+        candidates = (
+            sorted(p.rglob("trajectory.json")) + sorted(p.rglob("*.jsonl"))
+            if p.is_dir()
+            else [p]
+        )
+        for f in candidates:
+            fmt = detect(f)
+            if fmt:
+                out.append((f, fmt))
+            elif not p.is_dir():
+                print(f"trajsum: {f}: unrecognized format", file=sys.stderr)
+    return out
+
+
+PARSERS = {"atif": parse_atif, "pi": parse_pi, "claude": parse_claude}
+
+
+# ---------------------------------------------------------------- output
+
+
+def human(n: float) -> str:
+    for unit in ("", "K", "M", "B"):
+        if abs(n) < 1000:
+            return f"{n:.0f}{unit}" if unit == "" else f"{n:.1f}{unit}"
+        n /= 1000
+    return f"{n:.1f}T"
+
+
+def dur(seconds: float | None) -> str:
+    if seconds is None:
+        return "?"
+    m, sec = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    return f"{h}h{m:02d}m" if h else f"{m}m{sec:02d}s"
+
+
+def show_detail(s: Summary, top: int) -> None:
+    t = s.tokens
+    print(f"━━ {s.file}")
+    print(
+        f"  format      {s.format}  agent={s.agent or '?'}  session={s.session_id or '?'}"
+    )
+    print(f"  models      {', '.join(s.models) or '?'}")
+    if s.cwd:
+        print(f"  cwd/task    {s.cwd}")
+    busy = s.active_s is not None and s.active_s < (s.duration_s or 0) * 0.9
+    active = f", {dur(s.active_s)} active" if busy else ""
+    print(
+        f"  time        {s.started or '?'} → {s.ended or '?'}  ({dur(s.duration_s)}{active})"
+    )
+    if s.reward is not None or s.exception:
+        print(f"  outcome     reward={s.reward}  exception={s.exception or '-'}")
+    print(
+        f"  steps       {s.agent_steps} agent ({s.steps_with_tools} with tools, {s.steps_without_tools} without)"
+        f"  ·  {s.user_messages} user"
+        + (f"  ·  {s.branches} abandoned branches" if s.branches else "")
+    )
+    if s.reasoning_steps:
+        chars = (
+            f"{human(s.reasoning_chars)} chars"
+            if s.reasoning_chars
+            else "content redacted"
+        )
+        print(f"  reasoning   {s.reasoning_steps} steps, {chars}")
+    print(
+        f"  tool calls  {s.tool_calls}: "
+        + ", ".join(f"{k} {v}" for k, v in s.tools.items())
+    )
+    if s.tool_errors:
+        print(
+            f"  tool errors {s.tool_errors}: "
+            + ", ".join(f"{k} {v}" for k, v in s.tool_errors_by_tool.items())
+        )
+    if s.parse_errors:
+        print(
+            f"  parse errs  {s.parse_errors}: "
+            + "; ".join(f"{k} ×{v}" for k, v in s.parse_error_kinds.items())
+        )
+    if s.stop_reasons:
+        print(
+            "  stops       " + ", ".join(f"{k} {v}" for k, v in s.stop_reasons.items())
+        )
+    print(
+        f"  tokens      in {human(t.input)}  out {human(t.output)}  cache r/w {human(t.cache_read)}/{human(t.cache_write)}"
+        f"  peak ctx {human(t.peak_context)}"
+        + (f"  reasoning {human(t.reasoning)}" if t.reasoning else "")
+        + (f"  ${t.cost_usd:.2f}" if t.cost_usd else "")
+    )
+    failed = f", {s.failed_commands} failed" if s.failed_commands else ""
+    print(
+        f"  commands    {s.commands} ({s.unique_commands} unique{failed}); by program: "
+        + ", ".join(f"{k} {v}" for k, v in s.command_heads.items())
+    )
+    for cmd in s.top_commands:
+        print(f"      $ {cmd}")
+    if s.commands > len(s.top_commands):
+        print(f"      … {s.commands - len(s.top_commands)} more (--top N)")
+
+    def files(label: str, items: list[str]) -> None:
+        if not items:
+            return
+        shown = ", ".join(items[:top]) + (
+            f", … +{len(items) - top}" if len(items) > top else ""
+        )
+        print(f"  {label:<11} {len(items)}: {shown}")
+
+    files("edited", s.files_edited)
+    if s.edit_ops > len(s.files_edited):
+        print(f"              ({s.edit_ops} edit calls)")
+    files("written", s.files_written)
+    files("sh-written", s.files_shell_written)
+    files("sh-deleted", s.files_shell_deleted)
+    files("read", s.files_read)
+    if s.final_message:
+        msg = " ".join(s.final_message.split())
+        print(f"  last msg    {msg[:300]}{'…' if len(msg) > 300 else ''}")
+    print()
+
+
+def show_table(rows: list[Summary]) -> None:
+    hdr = f"{'run':38} {'fmt':6} {'steps':>5} {'tools':>5} {'cmds':>5} {'err':>4} {'perr':>4} {'edit':>4} {'wrt':>4} {'in':>7} {'out':>6} {'peak':>6} {'time':>7} {'rwd':>4}"
+    print(hdr)
+    print("─" * len(hdr))
+    for s in rows:
+        p = Path(s.file)
+        name = p.parent.parent.name if p.name == "trajectory.json" else p.stem
+        name = name if len(name) <= 38 else name[:37] + "…"
+        files_w = len(s.files_written) + len(s.files_shell_written)
+        rwd = "" if s.reward is None else f"{s.reward:g}"
+        print(
+            f"{name:38} {s.format:6} {s.agent_steps:>5} {s.tool_calls:>5} {s.commands:>5} {s.tool_errors:>4} {s.parse_errors:>4}"
+            f" {len(s.files_edited):>4} {files_w:>4} {human(s.tokens.input):>7} {human(s.tokens.output):>6}"
+            f" {human(s.tokens.peak_context):>6} {dur(s.active_s if s.active_s is not None else s.duration_s):>7} {rwd:>4}"
+        )
+    tot = lambda f: sum(f(s) for s in rows)
+    rewards = [s.reward for s in rows if s.reward is not None]
+    print("─" * len(hdr))
+    print(
+        f"{len(rows)} runs · {tot(lambda s: s.agent_steps)} steps · {tot(lambda s: s.tool_calls)} tool calls"
+        f" · {tot(lambda s: s.commands)} commands · {tot(lambda s: s.tool_errors)} tool errors"
+        f" · {tot(lambda s: s.parse_errors)} parse errors · in {human(tot(lambda s: s.tokens.input))}"
+        f" out {human(tot(lambda s: s.tokens.output))}"
+        + (f" · pass {sum(r >= 1 for r in rewards)}/{len(rewards)}" if rewards else "")
+    )
+    print(
+        "columns: err=tool errors, perr=response parse errors, edit=files edited, wrt=files written (tool + shell-inferred), time=active (idle gaps >5m dropped)"
+    )
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        prog="trajsum",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument("paths", nargs="+", type=Path)
+    ap.add_argument(
+        "--json", action="store_true", help="JSON lines, one summary per run"
+    )
+    ap.add_argument("--detail", action="store_true", help="full summary for every run")
+    ap.add_argument(
+        "--top",
+        type=int,
+        default=10,
+        help="list length for commands/files (default 10)",
+    )
+    ap.add_argument(
+        "--format", choices=list(PARSERS), help="force a format instead of detecting"
+    )
+    a = ap.parse_args()
+
+    found = [(p, a.format) for p in a.paths] if a.format else expand(a.paths)
+    if not found:
+        print("trajsum: no trajectories or sessions found", file=sys.stderr)
+        return 1
+    rows: list[Summary] = []
+    for path, fmt in found:
+        try:
+            rows.append(PARSERS[fmt](path, a.top))  # type: ignore[index]
+        except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
+            print(f"trajsum: {path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+    if a.json:
+        for s in rows:
+            print(s.model_dump_json())
+    elif len(rows) == 1 or a.detail:
+        for s in rows:
+            show_detail(s, a.top)
+    else:
+        show_table(rows)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
