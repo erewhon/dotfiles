@@ -30,6 +30,16 @@ if brew trust --help >/dev/null 2>&1; then
         done
 fi
 
+# pi moved from an npm global to the pi-coding-agent formula. An npm-installed
+# copy owns $(brew --prefix)/bin/pi and would make `brew link` fail, so drop it
+# first. Config in ~/.pi is untouched.
+if [ -d "$(brew --prefix)/lib/node_modules/@earendil-works/pi-coding-agent" ] &&
+    ! brew list --formula pi-coding-agent >/dev/null 2>&1 &&
+    command -v npm >/dev/null 2>&1; then
+    echo "[20-brew-bundle] replacing npm-installed pi with the brew formula"
+    npm uninstall -g @earendil-works/pi-coding-agent || true
+fi
+
 echo "[20-brew-bundle] running brew bundle..."
 brew bundle --file="$HOME/.config/Brewfile"
 echo "[20-brew-bundle] done"

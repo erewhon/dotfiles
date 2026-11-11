@@ -138,6 +138,9 @@ brew "tectonic"
 brew "block-goose-cli"
 brew "fabric-ai"
 brew "opencode"
+# pi (pi.dev) ships wherever OpenCode does. Was an npm global, but that was
+# silently skipped on hosts where npm was not on PATH at chezmoi time.
+brew "pi-coding-agent"
 
 # Data & cloud
 brew "awscli"

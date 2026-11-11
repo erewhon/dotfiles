@@ -2,4 +2,4 @@
 # One package per line. Comments with #.
 
 typescript
-@earendil-works/pi-coding-agent   # pi coding harness; config lives in ~/.pi/agent
+# pi (@earendil-works/pi-coding-agent) moved to the Brewfile as pi-coding-agent
