@@ -21,6 +21,11 @@ Formats (auto-detected):
           steps with step_index, source, type (USER_INPUT, PLANNER_RESPONSE,
           ...), status, created_at, *_tokens and tool_calls[{name, args}].
           The array may be the whole document or nested under any key.
+  codex   OpenAI Codex CLI rollout .jsonl (~/.codex/sessions/YYYY/MM/DD/...)
+  opencode
+          `opencode session export <id>` JSON, or OpenCode's SQLite store
+          (~/.local/share/opencode/opencode.db: one run per session; filter
+          with --session ID-or-title-substring).
 
 Files written by shell commands (redirection, tee, sed -i, cp/mv, touch,
 Path.write_text...) are inferred heuristically and listed separately from
@@ -35,6 +40,7 @@ import json
 import os
 import re
 import shlex
+import sqlite3
 import sys
 from collections import Counter
 from datetime import UTC, datetime
@@ -43,7 +49,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-Format = Literal["atif", "pi", "claude", "cortex"]
+Format = Literal["atif", "pi", "claude", "cortex", "codex", "opencode", "opencode-db"]
 
 
 # ---------------------------------------------------------------- model
@@ -108,6 +114,7 @@ class Summary(BaseModel):
     files_read: list[str] = Field(default_factory=list)
     files_edited: list[str] = Field(default_factory=list)
     files_written: list[str] = Field(default_factory=list)  # write/create tool
+    files_deleted: list[str] = Field(default_factory=list)  # delete via patch tool
     files_shell_written: list[str] = Field(default_factory=list)  # heuristic
     files_shell_deleted: list[str] = Field(default_factory=list)  # heuristic
     edit_ops: int = 0
@@ -264,6 +271,8 @@ class Collector:
         self.models: Counter[str] = Counter()
         self.stops: Counter[str] = Counter()
         self.parse_kinds: Counter[str] = Counter()
+        self.patch_deleted: list[str] = []  # files deleted by apply_patch
+        self.extra_paths: list[ToolCall] = []  # extra files of a multi-file patch
 
     def when(self, value: Any) -> None:
         t = ts(value)
@@ -321,14 +330,17 @@ class Collector:
         def ordered(action: str) -> list[str]:
             return list(
                 dict.fromkeys(
-                    c.path for c in self.calls if c.action == action and c.path
+                    c.path
+                    for c in self.calls + self.extra_paths
+                    if c.action == action and c.path
                 )
             )
 
         s.files_read = ordered("read")
         s.files_edited = ordered("edit")
         s.files_written = ordered("write")
-        s.edit_ops = sum(c.action == "edit" for c in self.calls)
+        s.edit_ops = sum(c.action == "edit" for c in self.calls + self.extra_paths)
+        s.files_deleted = list(dict.fromkeys(self.patch_deleted))
         tool_touched = set(s.files_edited) | set(s.files_written)
         written: dict[str, None] = {}
         deleted: dict[str, None] = {}
@@ -836,10 +848,391 @@ def parse_cortex(path: Path, top: int) -> Summary:
     return c.finish(top)
 
 
+# ---------------------------------------------------------------- patches
+
+
+PATCH_FILE = re.compile(r"^\*\*\* (Add|Update|Delete) File: (.+?)\s*$", re.MULTILINE)
+PATCH_MOVE = re.compile(r"^\*\*\* Move to: (.+?)\s*$", re.MULTILINE)
+
+
+def patch_files(text: str) -> list[tuple[str, str]]:
+    """(action, path) pairs from an apply_patch envelope (Codex / OpenCode)."""
+    out = [
+        ({"Add": "write", "Update": "edit", "Delete": "delete"}[m.group(1)], m.group(2))
+        for m in PATCH_FILE.finditer(text)
+    ]
+    out += [("write", m.group(1)) for m in PATCH_MOVE.finditer(text)]
+    return out
+
+
+def add_patch_calls(c: Collector, name: str, text: str, error: bool) -> list[ToolCall]:
+    """One ToolCall per file in a patch; deletions go to the shell-deleted list."""
+    calls: list[ToolCall] = []
+    files = patch_files(text)
+    for action, path in files:
+        if action == "delete":
+            c.patch_deleted.append(path)
+            continue
+        calls.append(ToolCall(name=name, path=path, action=action, error=error))  # type: ignore[arg-type]
+    if not calls:
+        calls.append(ToolCall(name=name, error=error))
+    c.calls.extend(calls[:1])
+    for extra in calls[1:]:  # same call touching more files: keep counts honest
+        c.extra_paths.append(extra)
+    return calls
+
+
+# ---------------------------------------------------------------- codex
+
+EXIT_LINE = re.compile(r"(?:Process exited with code|Exit code:?)\s*(-?\d+)")
+
+
+def codex_exit(output: Any) -> int | None:
+    if isinstance(output, str):
+        try:
+            obj = json.loads(output)
+        except json.JSONDecodeError:
+            obj = None
+        if isinstance(obj, dict):
+            meta = obj.get("metadata") or {}
+            if isinstance(meta.get("exit_code"), int):
+                return meta["exit_code"]
+            output = obj.get("output") or ""
+        m = EXIT_LINE.search(output if isinstance(output, str) else "")
+        return int(m.group(1)) if m else None
+    return None
+
+
+def parse_codex(path: Path, top: int) -> Summary:
+    c = Collector(path, "codex")
+    s = c.s
+    pending: dict[str, list[ToolCall]] = {}
+    last_total: tuple[int, ...] | None = None
+    calls_at_last_step = 0  # tool calls precede the token_count that closes a response
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        e = json.loads(line)
+        c.when(e.get("timestamp"))
+        kind, p = e.get("type"), e.get("payload") or {}
+        if kind == "session_meta":
+            s.session_id, s.cwd = p.get("id"), p.get("cwd")
+            s.agent = " ".join(x for x in ("codex", p.get("cli_version")) if x)
+            continue
+        if kind == "turn_context":
+            if p.get("model"):
+                c.models[p["model"]] += 0
+            s.cwd = s.cwd or p.get("cwd")
+            continue
+        ptype = p.get("type")
+        if kind == "event_msg":
+            if ptype == "user_message":
+                s.user_messages += 1
+            elif ptype == "agent_message" and p.get("message"):
+                s.final_message = p["message"]
+            elif ptype == "token_count" and p.get("info"):
+                info = p["info"]
+                total = info.get("total_token_usage") or {}
+                key = tuple(
+                    total.get(k) or 0
+                    for k in ("input_tokens", "cached_input_tokens", "output_tokens")
+                )
+                if key == last_total:  # codex re-emits the same count; one per response
+                    continue
+                last_total = key
+                u = info.get("last_token_usage") or {}
+                s.agent_steps += 1
+                made = len(c.calls) > calls_at_last_step
+                s.steps_with_tools += made
+                s.steps_without_tools += not made
+                calls_at_last_step = len(c.calls)
+                cached = u.get("cached_input_tokens") or 0
+                # OpenAI style: input_tokens includes the cached part
+                c.usage(
+                    (u.get("input_tokens") or 0) - cached,
+                    u.get("output_tokens") or 0,
+                    cached,
+                    0,
+                    u.get("reasoning_output_tokens") or 0,
+                )
+            continue
+        if kind != "response_item":
+            continue
+        if ptype == "reasoning":
+            s.reasoning_steps += 1
+            s.reasoning_chars += sum(
+                len(x.get("text") or "")
+                for x in p.get("summary") or []
+                if isinstance(x, dict)
+            )
+        elif ptype in ("function_call", "local_shell_call"):
+            name = p.get("name") or ptype
+            args: Any = p.get("arguments") or p.get("action") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    args = {}
+            cmd = (
+                args.get("cmd") or args.get("command")
+                if isinstance(args, dict)
+                else None
+            )
+            if isinstance(cmd, list):  # ["bash", "-lc", "..."]
+                cmd = (
+                    cmd[-1]
+                    if len(cmd) >= 3 and cmd[1] in ("-lc", "-c")
+                    else shlex.join(cmd)
+                )
+            tc = ToolCall(name=name, command=cmd if isinstance(cmd, str) else None)
+            c.calls.append(tc)
+            pending.setdefault(p.get("call_id") or "", []).append(tc)
+        elif ptype == "custom_tool_call":
+            name = p.get("name") or "custom"
+            if name == "apply_patch":
+                calls = add_patch_calls(c, name, p.get("input") or "", False)
+            else:
+                calls = [ToolCall(name=name)]
+                c.calls.extend(calls)
+            pending.setdefault(p.get("call_id") or "", []).extend(calls)
+        elif ptype in (
+            "function_call_output",
+            "custom_tool_call_output",
+            "local_shell_call_output",
+        ):
+            code = codex_exit(p.get("output"))
+            if code not in (None, 0):
+                for tc in pending.get(p.get("call_id") or "", []):
+                    tc.error = True
+    return c.finish(top)
+
+
+# ---------------------------------------------------------------- opencode
+
+OC_READ, OC_EDIT, OC_WRITE = {"read"}, {"edit", "multiedit"}, {"write"}
+OC_SHELL = {"bash", "shell"}
+OC_PATCH = {"patch", "apply_patch"}
+
+
+def opencode_summary(
+    path: Path, label: str, info: dict[str, Any], msgs: list[dict[str, Any]], top: int
+) -> Summary:
+    """msgs: normalized [{role, time, tokens, cost, finish, model, parts:[{type,text,name,status,input,exit,error}]}]"""
+    c = Collector(path, "opencode")
+    s = c.s
+    s.file = label
+    s.session_id = info.get("id")
+    s.cwd = info.get("directory")
+    s.agent = "opencode" + (" (subagent)" if info.get("parent_id") else "")
+    for m in msgs:
+        c.when(m.get("time"))
+        role = m.get("role")
+        if role == "user":
+            s.user_messages += 1
+            continue
+        if role != "assistant":
+            continue
+        s.agent_steps += 1
+        if m.get("error"):  # provider/API failure on this response
+            key = f"error:{m['error']}"
+            s.step_statuses[key] = s.step_statuses.get(key, 0) + 1
+        if m.get("model"):
+            c.models[m["model"]] += 1
+        if m.get("finish"):
+            c.stops[m["finish"]] += 1
+        t = m.get("tokens") or {}
+        cache = t.get("cache") or {}
+        c.usage(
+            t.get("input") or 0,
+            t.get("output") or 0,
+            cache.get("read") or 0,
+            cache.get("write") or 0,
+            t.get("reasoning") or 0,
+            m.get("cost") or 0.0,
+        )
+        tools = 0
+        for part in m.get("parts") or []:
+            ptype = part.get("type")
+            if ptype == "reasoning" and part.get("text"):
+                s.reasoning_steps += 1
+                s.reasoning_chars += len(part["text"])
+            elif ptype == "text" and (part.get("text") or "").strip():
+                s.final_message = part["text"]
+            elif ptype == "tool":
+                tools += 1
+                name = part.get("name") or "?"
+                inp = part.get("input") or {}
+                err = part.get("status") == "error" or (
+                    isinstance(part.get("exit"), int) and part["exit"] != 0
+                )
+                if name in OC_PATCH:
+                    add_patch_calls(
+                        c,
+                        name,
+                        inp.get("patchText")
+                        or inp.get("patch")
+                        or inp.get("input")
+                        or "",
+                        err,
+                    )
+                    continue
+                action = (
+                    "read"
+                    if name in OC_READ
+                    else "edit"
+                    if name in OC_EDIT
+                    else "write"
+                    if name in OC_WRITE
+                    else "other"
+                )
+                c.calls.append(
+                    ToolCall(
+                        name=name,
+                        command=inp.get("command") if name in OC_SHELL else None,
+                        path=(inp.get("filePath") or inp.get("path"))
+                        if action != "other"
+                        else None,
+                        action=action,  # type: ignore[arg-type]
+                        error=err,
+                    )
+                )
+        s.steps_with_tools += bool(tools)
+        s.steps_without_tools += not tools
+    return c.finish(top)
+
+
+def oc_part(d: dict[str, Any]) -> dict[str, Any]:
+    st = d.get("state") or {}
+    meta = st.get("metadata") or {}
+    return {
+        "type": d.get("type"),
+        "text": d.get("text"),
+        "name": d.get("tool") or d.get("name"),
+        "status": st.get("status"),
+        "input": st.get("input") or {},
+        "exit": meta.get("exit", meta.get("exit_code")),
+    }
+
+
+def parse_opencode(path: Path, top: int) -> Summary:
+    """`opencode session export` JSON (v2 shape; v1 info/parts shape also accepted)."""
+    doc = json.loads(path.read_text())
+    info = doc.get("info") or {}
+    norm_info = {
+        "id": info.get("id"),
+        "directory": (info.get("location") or {}).get("directory")
+        or info.get("directory"),
+        "parent_id": info.get("parentID"),
+    }
+    msgs: list[dict[str, Any]] = []
+    for m in doc.get("messages") or []:
+        mi = m.get("info") or m  # v1: {info, parts}; v2: flat
+        role = mi.get("role") or mi.get("type")
+        model = mi.get("model")
+        if isinstance(model, dict):
+            model = "/".join(x for x in (model.get("providerID"), model.get("id")) if x)
+        elif mi.get("modelID"):
+            model = "/".join(x for x in (mi.get("providerID"), mi.get("modelID")) if x)
+        parts = (
+            m.get("parts")
+            if "parts" in m
+            else m.get("content")
+            if isinstance(m.get("content"), list)
+            else []
+        )
+        msgs.append(
+            {
+                "role": role,
+                "time": (mi.get("time") or {}).get("created"),
+                "tokens": mi.get("tokens"),
+                "cost": mi.get("cost"),
+                "finish": mi.get("finish"),
+                "error": (mi.get("error") or {}).get("name")
+                if isinstance(mi.get("error"), dict)
+                else mi.get("error"),
+                "model": model,
+                "parts": [oc_part(x) for x in parts or [] if isinstance(x, dict)],
+            }
+        )
+    return opencode_summary(path, str(path), norm_info, msgs, top)
+
+
+def parse_opencode_db(
+    path: Path, top: int, session: str | None = None
+) -> list[Summary]:
+    try:
+        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        db.execute("select 1 from session limit 1")
+    except sqlite3.Error:
+        db = sqlite3.connect(f"file:{path}?immutable=1", uri=True)
+    db.row_factory = sqlite3.Row
+    q = "select id, directory, title, parent_id from session"
+    args: list[str] = []
+    if session:
+        q += " where id like ? or title like ?"
+        args = [f"%{session}%", f"%{session}%"]
+    q += " order by time_created"
+    out: list[Summary] = []
+    for row in db.execute(q, args).fetchall():
+        parts: dict[str, list[dict[str, Any]]] = {}
+        for pr in db.execute(
+            "select message_id, data from part where session_id = ? order by id",
+            (row["id"],),
+        ):
+            parts.setdefault(pr["message_id"], []).append(
+                oc_part(json.loads(pr["data"]))
+            )
+        msgs = []
+        for mr in db.execute(
+            "select id, data from message where session_id = ? order by time_created, id",
+            (row["id"],),
+        ):
+            d = json.loads(mr["data"])
+            model = (
+                "/".join(x for x in (d.get("providerID"), d.get("modelID")) if x)
+                or None
+            )
+            msgs.append(
+                {
+                    "role": d.get("role"),
+                    "time": (d.get("time") or {}).get("created"),
+                    "tokens": d.get("tokens"),
+                    "cost": d.get("cost"),
+                    "finish": d.get("finish"),
+                    "error": (d.get("error") or {}).get("name")
+                    if isinstance(d.get("error"), dict)
+                    else d.get("error"),
+                    "model": model,
+                    "parts": parts.get(mr["id"], []),
+                }
+            )
+        label = f"{path}#{row['id']}"
+        s = opencode_summary(path, label, dict(row), msgs, top)
+        out.append(s)
+    db.close()
+    return out
+
+
 # ---------------------------------------------------------------- discovery
 
 
 def detect(path: Path) -> Format | None:
+    try:
+        with path.open("rb") as fb:
+            magic = fb.read(16)
+    except OSError:
+        return None
+    if magic.startswith(b"SQLite format 3"):
+        try:
+            db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            names = {
+                r[0]
+                for r in db.execute("select name from sqlite_master where type='table'")
+            }
+            db.close()
+        except sqlite3.Error:
+            return None
+        return "opencode-db" if {"session", "message", "part"} <= names else None
     try:
         with path.open() as f:
             head = f.read(4096)
@@ -848,6 +1241,8 @@ def detect(path: Path) -> Format | None:
     if path.suffix == ".json":
         if '"schema_version"' in head and "ATIF" in head:
             return "atif"
+        if '"info"' in head and '"messages"' in head and '"ses_' in head:
+            return "opencode"
         if (
             '"step_index"' in head
             or "PLANNER_RESPONSE" in head
@@ -855,13 +1250,21 @@ def detect(path: Path) -> Format | None:
         ):
             return "cortex"
         return None
-    first = head.splitlines()[0] if head else ""
+    try:
+        with path.open() as f:
+            first = f.readline(4_000_000)  # codex puts ~12 KB of instructions on line 1
+    except (OSError, UnicodeDecodeError):
+        return None
     try:
         obj = json.loads(first)
     except json.JSONDecodeError:
         return None
     if obj.get("type") == "session" and "version" in obj:
         return "pi"
+    if obj.get("type") == "session_meta" or (
+        obj.get("type") == "response_item" and "payload" in obj
+    ):
+        return "codex"
     if "sessionId" in obj or obj.get("type") in (
         "user",
         "assistant",
@@ -876,7 +1279,9 @@ def expand(paths: list[Path]) -> list[tuple[Path, Format]]:
     out: list[tuple[Path, Format]] = []
     for p in paths:
         candidates = (
-            sorted(p.rglob("*.json")) + sorted(p.rglob("*.jsonl"))
+            sorted(p.rglob("*.json"))
+            + sorted(p.rglob("*.jsonl"))
+            + sorted(p.rglob("opencode*.db"))
             if p.is_dir()
             else [p]
         )
@@ -894,6 +1299,8 @@ PARSERS = {
     "pi": parse_pi,
     "claude": parse_claude,
     "cortex": parse_cortex,
+    "codex": parse_codex,
+    "opencode": parse_opencode,
 }
 
 
@@ -948,7 +1355,7 @@ def show_detail(s: Summary, top: int) -> None:
         print("  step types  " + ", ".join(f"{k} {v}" for k, v in s.step_types.items()))
     if s.step_statuses:
         print(
-            "  not DONE    " + ", ".join(f"{k} {v}" for k, v in s.step_statuses.items())
+            "  failures    " + ", ".join(f"{k} {v}" for k, v in s.step_statuses.items())
         )
     print(
         f"  tool calls  {s.tool_calls}: "
@@ -996,6 +1403,7 @@ def show_detail(s: Summary, top: int) -> None:
     if s.edit_ops > len(s.files_edited):
         print(f"              ({s.edit_ops} edit calls)")
     files("written", s.files_written)
+    files("deleted", s.files_deleted)
     files("sh-written", s.files_shell_written)
     files("sh-deleted", s.files_shell_deleted)
     files("read", s.files_read)
@@ -1011,7 +1419,12 @@ def show_table(rows: list[Summary]) -> None:
     print("─" * len(hdr))
     for s in rows:
         p = Path(s.file)
-        name = p.parent.parent.name if p.name == "trajectory.json" else p.stem
+        if "#" in s.file:  # opencode.db#<session id>
+            name = s.file.rsplit("#", 1)[1]
+        elif p.name == "trajectory.json":
+            name = p.parent.parent.name
+        else:
+            name = p.stem
         name = name if len(name) <= 38 else name[:37] + "…"
         files_w = len(s.files_written) + len(s.files_shell_written)
         rwd = "" if s.reward is None else f"{s.reward:g}"
@@ -1053,7 +1466,13 @@ def main() -> int:
         help="list length for commands/files (default 10)",
     )
     ap.add_argument(
-        "--format", choices=list(PARSERS), help="force a format instead of detecting"
+        "--format",
+        choices=[*PARSERS, "opencode-db"],
+        help="force a format instead of detecting",
+    )
+    ap.add_argument(
+        "--session",
+        help="opencode.db: only sessions whose id or title contains this",
     )
     a = ap.parse_args()
 
@@ -1064,8 +1483,17 @@ def main() -> int:
     rows: list[Summary] = []
     for path, fmt in found:
         try:
-            rows.append(PARSERS[fmt](path, a.top))  # type: ignore[index]
-        except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
+            if fmt == "opencode-db":
+                rows.extend(parse_opencode_db(path, a.top, a.session))
+            else:
+                rows.append(PARSERS[fmt](path, a.top))  # type: ignore[index]
+        except (
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+            AttributeError,
+            sqlite3.Error,
+        ) as exc:
             print(f"trajsum: {path}: {type(exc).__name__}: {exc}", file=sys.stderr)
     if a.json:
         for s in rows:
