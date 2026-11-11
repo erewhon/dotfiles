@@ -1,0 +1,434 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pydantic>=2"]
+# ///
+"""codecheck: find the languages in a repo and run each one's non-AI checks.
+
+    codecheck                   check the repo containing the current directory
+    codecheck --fix             run the fix/format variants where a tool has one
+    codecheck --lang rust,go    override language detection
+    codecheck --skip ty,osv     skip tools by name
+    codecheck --only clippy     run just these tools
+    codecheck --list            show the plan without running anything
+    codecheck -C DIR            check the repo containing DIR
+
+Languages: rust, python, go, ts, shell.  Cross-language checks always run
+unless --no-cross: typos, gitleaks, osv-scanner, actionlint.
+Missing tools are reported as "skip" and do not fail the run.
+
+Optional per-repo config, .codecheck.toml at the repo root:
+
+    languages = ["rust", "python"]      # replaces auto-detection
+    skip = ["cargo-deny"]               # tool names to skip
+    [paths]                             # project dirs per language (default: detected)
+    go = ["cmd/server", "lib/client"]
+    [extra]                             # extra commands, run from the repo root
+    vulture = "vulture src --min-confidence 80"
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import tomllib
+from collections.abc import Callable
+from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+Lang = Literal["rust", "python", "go", "ts", "shell"]
+LANGS: tuple[Lang, ...] = ("rust", "python", "go", "ts", "shell")
+PRUNE = {
+    ".git", ".jj", "node_modules", "target", ".venv", "venv", "vendor", "dist",
+    "build", "__pycache__", ".mypy_cache", ".ruff_cache", ".next", ".turbo",
+}  # fmt: skip
+MAX_DEPTH = 4
+
+
+class Config(BaseModel):
+    languages: list[Lang] | None = None
+    skip: list[str] = Field(default_factory=list)
+    paths: dict[Lang, list[str]] = Field(default_factory=dict)
+    extra: dict[str, str] = Field(default_factory=dict)
+
+
+class Step(BaseModel):
+    name: str
+    cmd: list[str]
+    cwd: Path
+    lang: str
+    needs: str  # binary that must be on PATH
+    fail_on_output: bool = False  # e.g. `gofmt -l` exits 0 but lists bad files
+
+
+class Result(BaseModel):
+    step: Step
+    status: Literal["ok", "fail", "skip"]
+    note: str = ""
+    seconds: float = 0.0
+
+
+# ---------------------------------------------------------------- discovery
+
+
+def repo_root(start: Path) -> Path:
+    for cmd in (["jj", "root"], ["git", "rev-parse", "--show-toplevel"]):
+        try:
+            out = subprocess.run(
+                cmd, cwd=start, capture_output=True, text=True, check=False
+            )
+        except FileNotFoundError:
+            continue
+        if out.returncode == 0 and out.stdout.strip():
+            return Path(out.stdout.strip())
+    return start
+
+
+def walk(root: Path) -> list[Path]:
+    """Directories under root (including root), pruned and depth-limited."""
+    found: list[Path] = []
+    for dirpath, dirnames, _ in os.walk(root):
+        d = Path(dirpath)
+        depth = len(d.relative_to(root).parts)
+        dirnames[:] = (
+            [] if depth >= MAX_DEPTH else [n for n in dirnames if n not in PRUNE]
+        )
+        found.append(d)
+    return found
+
+
+def topmost(dirs: list[Path]) -> list[Path]:
+    """Drop dirs nested inside another selected dir (workspace members)."""
+    out: list[Path] = []
+    for d in sorted(dirs, key=lambda p: len(p.parts)):
+        if not any(d.is_relative_to(o) for o in out):
+            out.append(d)
+    return out
+
+
+def tracked_files(root: Path) -> list[Path]:
+    for cmd in (["jj", "file", "list"], ["git", "ls-files"]):
+        try:
+            out = subprocess.run(
+                cmd, cwd=root, capture_output=True, text=True, check=False
+            )
+        except FileNotFoundError:
+            continue
+        if out.returncode == 0:
+            return [root / line for line in out.stdout.splitlines() if line]
+    return [p for d in walk(root) for p in d.iterdir() if p.is_file()]
+
+
+def detect(root: Path, files: list[Path]) -> dict[Lang, list[Path]]:
+    dirs = walk(root)
+
+    def has(d: Path, *names: str) -> bool:
+        return any((d / n).exists() for n in names)
+
+    found: dict[Lang, list[Path]] = {
+        "rust": topmost([d for d in dirs if has(d, "Cargo.toml")]),
+        "python": topmost(
+            [d for d in dirs if has(d, "pyproject.toml", "setup.py", "uv.lock")]
+        ),
+        # every go.mod is its own module; ./... stops at nested modules
+        "go": [d for d in dirs if has(d, "go.mod")],
+        "ts": topmost(
+            [d for d in dirs if has(d, "package.json") and has(d, "tsconfig.json")]
+        ),
+        "shell": [root] if any(f.suffix in (".sh", ".bash") for f in files) else [],
+    }
+    return {k: v for k, v in found.items() if v}
+
+
+# ---------------------------------------------------------------- planning
+
+
+def stepper(cwd: Path, lang: str) -> Callable[..., Step]:
+    def make(name: str, cmd: list[str], needs: str, **kw: bool) -> Step:
+        return Step(name=name, cmd=cmd, cwd=cwd, lang=lang, needs=needs, **kw)
+
+    return make
+
+
+def py_steps(d: Path, fix: bool) -> list[Step]:
+    s = stepper(d, "python")
+    return [
+        s("ruff", ["ruff", "check", *(["--fix"] if fix else []), "."], "ruff"),
+        s(
+            "ruff-format",
+            ["ruff", "format", *([] if fix else ["--check"]), "."],
+            "ruff",
+        ),
+        s("ty", ["ty", "check"], "ty"),
+    ]
+
+
+def rust_steps(d: Path, fix: bool) -> list[Step]:
+    s = stepper(d, "rust")
+    clippy = ["cargo", "clippy", "--all-targets", "--all-features"]
+    clippy += ["--fix", "--allow-dirty", "--allow-staged"] if fix else []
+    clippy += ["--", "-D", "warnings"]
+    # without deny.toml the license check rejects everything; run the rest
+    deny = ["cargo", "deny", "check"] + (
+        [] if (d / "deny.toml").exists() else ["advisories", "bans", "sources"]
+    )
+    return [
+        s("rustfmt", ["cargo", "fmt", "--all", *([] if fix else ["--check"])], "cargo"),
+        s("clippy", clippy, "cargo-clippy"),
+        s("cargo-deny", deny, "cargo-deny"),
+        s("cargo-machete", ["cargo", "machete"], "cargo-machete"),
+    ]
+
+
+def go_steps(d: Path, fix: bool) -> list[Step]:
+    s = stepper(d, "go")
+    steps = [
+        s(
+            "gofmt",
+            ["gofmt", "-w" if fix else "-l", "."],
+            "gofmt",
+            fail_on_output=not fix,
+        )
+    ]
+    if shutil.which("golangci-lint"):  # includes govet, staticcheck, errcheck...
+        steps.append(
+            s(
+                "golangci-lint",
+                ["golangci-lint", "run", *(["--fix"] if fix else []), "./..."],
+                "golangci-lint",
+            )
+        )
+    else:
+        steps.append(s("go-vet", ["go", "vet", "./..."], "go"))
+    steps.append(s("govulncheck", ["govulncheck", "./..."], "govulncheck"))
+    return steps
+
+
+def ts_steps(d: Path, fix: bool) -> list[Step]:
+    s = stepper(d, "ts")
+
+    def local(tool: str) -> bool:
+        return (d / "node_modules" / ".bin" / tool).exists()
+
+    def run(tool: str) -> list[str]:
+        return ["pnpm", "exec", tool] if local(tool) else [tool]
+
+    def needs(tool: str) -> str:
+        return "pnpm" if local(tool) else tool
+
+    # Follow the repo's own choice: biome config > eslint (+prettier) > prettier > biome defaults
+    eslint_cfg = any(d.glob("eslint.config.*")) or any(d.glob(".eslintrc*"))
+    biome_cfg = (d / "biome.json").exists() or (d / "biome.jsonc").exists()
+    prettier_cfg = any(d.glob(".prettierrc*")) or any(d.glob("prettier.config.*"))
+    steps: list[Step] = []
+    if biome_cfg or not (eslint_cfg or prettier_cfg):
+        biome = run("biome") + ["check", *(["--write"] if fix else []), "."]
+        steps.append(s("biome", biome, needs("biome")))
+    else:
+        if eslint_cfg:
+            eslint = run("eslint") + [*(["--fix"] if fix else []), "."]
+            steps.append(s("eslint", eslint, needs("eslint")))
+        if prettier_cfg:
+            prettier = run("prettier") + ["--write" if fix else "--check", "."]
+            steps.append(s("prettier", prettier, needs("prettier")))
+    steps.append(s("tsc", run("tsc") + ["--noEmit", "-p", "."], needs("tsc")))
+    return steps
+
+
+def shell_steps(root: Path, files: list[Path], fix: bool) -> list[Step]:
+    sh = [
+        str(f.relative_to(root))
+        for f in files
+        if f.suffix in (".sh", ".bash") and f.exists()
+    ]
+    if not sh:
+        return []
+    s = stepper(root, "shell")
+    return [
+        s("shellcheck", ["shellcheck", *sh], "shellcheck"),
+        s("shfmt", ["shfmt", "-w" if fix else "-d", *sh], "shfmt"),
+    ]
+
+
+def cross_steps(root: Path, fix: bool) -> list[Step]:
+    s = stepper(root, "all")
+    steps = [
+        s("typos", ["typos", *(["--write-changes"] if fix else [])], "typos"),
+        s("gitleaks", GITLEAKS_CMD, "gitleaks"),
+        s("osv-scanner", ["osv-scanner", "scan", "source", "-r", "."], "osv-scanner"),
+    ]
+    if (root / ".github" / "workflows").is_dir():
+        steps.append(s("actionlint", ["actionlint"], "actionlint"))
+    return steps
+
+
+def plan(
+    root: Path, cfg: Config, langs: list[Lang] | None, fix: bool, cross: bool
+) -> list[Step]:
+    files = tracked_files(root)
+    found = detect(root, files)
+    chosen = langs or cfg.languages or list(found)
+    steps: list[Step] = []
+    builders = {"python": py_steps, "rust": rust_steps, "go": go_steps, "ts": ts_steps}
+    for lang in chosen:
+        if lang == "shell":
+            steps += shell_steps(root, files, fix)
+            continue
+        dirs = (
+            [root / p for p in cfg.paths[lang]]
+            if lang in cfg.paths
+            else found.get(lang, [root])
+        )
+        for d in dirs:
+            steps += builders[lang](d, fix)
+    if cross:
+        steps += cross_steps(root, fix)
+    for name, cmd in cfg.extra.items():
+        steps.append(
+            Step(name=name, cmd=["sh", "-c", cmd], cwd=root, lang="extra", needs="sh")
+        )
+    return steps
+
+
+# ---------------------------------------------------------------- running
+
+BOLD, DIM, RED, GREEN, YELLOW, RESET = (
+    ("\033[1m", "\033[2m", "\033[31m", "\033[32m", "\033[33m", "\033[0m")
+    if sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    else ("",) * 6
+)
+
+
+def label(step: Step, root: Path) -> str:
+    rel = step.cwd.relative_to(root)
+    return f"{step.lang}:{step.name}" + ("" if str(rel) == "." else f" ({rel})")
+
+
+GITLEAKS_CMD = ["gitleaks", "dir", ".", "--no-banner", "--redact", "--exit-code", "0"]
+GITLEAKS_CMD += [
+    "--report-format",
+    "json",
+    "--report-path",
+    "/dev/stdout",
+    "--log-level",
+    "warn",
+]
+
+
+def gitleaks_filtered(step: Step, root: Path) -> bool:
+    """`gitleaks dir` ignores .gitignore, so drop findings in untracked files."""
+    proc = subprocess.run(
+        step.cmd, cwd=step.cwd, capture_output=True, text=True, check=False
+    )
+    if proc.stderr.strip():
+        print(proc.stderr.strip())
+    tracked = {str(f.relative_to(root)) for f in tracked_files(root)}
+    findings = [f for f in json.loads(proc.stdout or "[]") if f.get("File") in tracked]
+    for f in findings:
+        print(f"{f['File']}:{f['StartLine']}  {f['RuleID']}  {f.get('Match', '')}")
+    print(f"{len(findings)} finding(s) in tracked files")
+    return not findings
+
+
+def run_step(step: Step, root: Path) -> Result:
+    if not shutil.which(step.needs):
+        return Result(step=step, status="skip", note=f"{step.needs} not installed")
+    print(
+        f"\n{BOLD}── {label(step, root)}{RESET} {DIM}$ {' '.join(step.cmd)}{RESET}",
+        flush=True,
+    )
+    t0 = time.monotonic()
+    if step.name == "gitleaks":
+        ok = gitleaks_filtered(step, root)
+    elif step.fail_on_output:
+        proc = subprocess.run(
+            step.cmd, cwd=step.cwd, capture_output=True, text=True, check=False
+        )
+        out = (proc.stdout + proc.stderr).strip()
+        if out:
+            print(out)
+        ok = proc.returncode == 0 and not proc.stdout.strip()
+    else:
+        ok = subprocess.run(step.cmd, cwd=step.cwd, check=False).returncode == 0
+    return Result(
+        step=step, status="ok" if ok else "fail", seconds=time.monotonic() - t0
+    )
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        prog="codecheck",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument("-C", dest="dir", type=Path, default=Path.cwd())
+    ap.add_argument("--lang", help=f"comma list from: {','.join(LANGS)}")
+    ap.add_argument("--fix", action="store_true")
+    ap.add_argument("--skip", default="", help="comma list of tool names")
+    ap.add_argument("--only", default="", help="comma list of tool names")
+    ap.add_argument(
+        "--no-cross", action="store_true", help="skip typos/gitleaks/osv/actionlint"
+    )
+    ap.add_argument("--list", action="store_true", help="print the plan and exit")
+    a = ap.parse_args()
+
+    root = repo_root(a.dir.resolve())
+    cfg_file = root / ".codecheck.toml"
+    cfg = (
+        Config.model_validate(tomllib.loads(cfg_file.read_text()))
+        if cfg_file.exists()
+        else Config()
+    )
+    langs: list[Lang] | None = None
+    if a.lang:
+        bad = [x for x in a.lang.split(",") if x not in LANGS]
+        if bad:
+            ap.error(f"unknown language(s): {','.join(bad)}")
+        langs = a.lang.split(",")  # type: ignore[assignment]
+
+    skip = set(cfg.skip) | {x for x in a.skip.split(",") if x}
+    only = {x for x in a.only.split(",") if x}
+    steps = [
+        s for s in plan(root, cfg, langs, a.fix, not a.no_cross)
+        if s.name not in skip and (not only or s.name in only)
+    ]  # fmt: skip
+
+    print(
+        f"{BOLD}codecheck{RESET} {root}"
+        + (f" {DIM}(config: .codecheck.toml){RESET}" if cfg_file.exists() else "")
+    )
+    if a.list:
+        for s in steps:
+            have = (
+                "" if shutil.which(s.needs) else f"  {YELLOW}[missing {s.needs}]{RESET}"
+            )
+            cmd = " ".join(s.cmd)
+            cmd = cmd if len(cmd) <= 80 else cmd[:77] + "..."
+            print(f"  {label(s, root):40} {DIM}{cmd}{RESET}{have}")
+        return 0
+    if not steps:
+        print("nothing to check (no languages detected; try --lang)")
+        return 0
+
+    results = [run_step(s, root) for s in steps]
+
+    print(f"\n{BOLD}── summary{RESET}")
+    colour = {"ok": GREEN, "fail": RED, "skip": YELLOW}
+    for r in results:
+        extra = r.note or f"{r.seconds:.1f}s"
+        print(
+            f"  {colour[r.status]}{r.status:4}{RESET}  {label(r.step, root):40} {DIM}{extra}{RESET}"
+        )
+    failed = sum(r.status == "fail" for r in results)
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -3,3 +3,4 @@
 
 # Add tools as needed, e.g.:
 # starship
+cargo-machete
