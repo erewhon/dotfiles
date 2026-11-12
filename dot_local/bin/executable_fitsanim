@@ -1,0 +1,507 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "astropy>=6",
+#   "astroalign>=2.5",
+#   "numpy>=1.26",
+#   "opencv-python-headless>=4.9",
+#   "pydantic>=2",
+#   "sep>=1.2",
+# ]
+# ///
+"""fitsanim: turn a directory of FITS sub-exposures into a stretched animation.
+
+    fitsanim DIR --night 20261110                 one night (noon to noon)
+    fitsanim DIR --since 20261110-2100 --until 20261111-0500
+    fitsanim DIR --night 20261110 --stack 20 --step 5 -o m45.mp4
+    fitsanim DIR --night 20261110 --crop 300,700,480,480 --scale 2 -o zoom.gif
+
+Built for Seestar subs (`Light_<target>_<exp>s_<filter>_YYYYMMDD-HHMMSS.fit`)
+but works on any FITS whose name carries a YYYYMMDD-HHMMSS stamp; files
+without one sort by DATE-OBS and are only filtered by --since/--until if
+they have a stamp.
+
+Pipeline: debayer (BAYERPAT header) -> subtract per-channel sky -> register
+every sub to a reference frame on its stars (translation + rotation, so
+dither, drift and meridian flips are handled) -> combine each group of
+--stack subs (median by default, which also removes satellite trails) ->
+one fixed auto-stretch for the whole run -> ffmpeg (.mp4 or .gif).
+
+Stars stay put and anything moving against them (asteroids, comets) walks
+across the frame. The label is the mid-time of each stack in UTC.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import shutil
+import subprocess
+import sys
+from collections import deque
+from collections.abc import Iterator
+from concurrent.futures import ProcessPoolExecutor
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Literal
+
+import cv2
+import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
+
+STAMP_RE = re.compile(r"(\d{8})-(\d{6})")
+FITS_SUFFIXES = {".fit", ".fits", ".fts"}
+BAYER_CODES: dict[str, int] = {
+    "RGGB": cv2.COLOR_BayerRGGB2RGB,
+    "BGGR": cv2.COLOR_BayerBGGR2RGB,
+    "GRBG": cv2.COLOR_BayerGRBG2RGB,
+    "GBRG": cv2.COLOR_BayerGBRG2RGB,
+}
+MAX_STARS = 60
+FloatImage = np.ndarray  # float32, HxWx3 (or HxW for star detection)
+
+
+class Options(BaseModel):
+    directory: Path
+    output: Path
+    since: datetime | None = None
+    until: datetime | None = None
+    stack: int = Field(default=10, ge=1)
+    step: int = Field(default=0, ge=0)  # 0 -> same as stack
+    combine: Literal["median", "mean"] = "median"
+    fps: float = Field(default=10.0, gt=0)
+    background: float = Field(default=0.15, gt=0, lt=1)
+    shadow_sigma: float = 2.8
+    crop: tuple[int, int, int, int] | None = None
+    scale: float = Field(default=1.0, gt=0)
+    mono: bool = False
+    label: bool = True
+    normalize: bool = True
+    jobs: int = Field(default=0, ge=0)
+
+
+class Sub(BaseModel):
+    """One registered sub-exposure, sky-subtracted, in the reference frame."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    path: Path
+    ok: bool
+    reason: str = ""
+    obs_time: datetime | None = None
+    image: np.ndarray | None = None
+
+
+class Reference(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    stars: np.ndarray  # Nx2 (x, y), brightest first
+    fluxes: np.ndarray  # matching star fluxes
+    star_count: int
+    gains: tuple[float, float, float]
+
+
+class Stretch(BaseModel):
+    """PixInsight-style STF: clip at `black`, midtones transfer with `mid`."""
+
+    black: float
+    white: float
+    mid: float
+
+    def apply(self, img: FloatImage) -> np.ndarray:
+        x = np.clip((img - self.black) / (self.white - self.black), 0.0, 1.0)
+        m = self.mid
+        y = (m - 1.0) * x / ((2.0 * m - 1.0) * x - m)
+        return (y * 255.0 + 0.5).astype(np.uint8)
+
+
+# ---------------------------------------------------------------- selection
+
+
+def parse_when(text: str) -> datetime:
+    digits = re.sub(r"\D", "", text)
+    for fmt, n in (("%Y%m%d%H%M%S", 14), ("%Y%m%d%H%M", 12), ("%Y%m%d", 8)):
+        if len(digits) == n:
+            return datetime.strptime(digits, fmt)
+    raise argparse.ArgumentTypeError(
+        f"bad time {text!r}: use YYYYMMDD, YYYYMMDD-HHMM or YYYYMMDD-HHMMSS"
+    )
+
+
+def file_stamp(path: Path) -> datetime | None:
+    m = STAMP_RE.search(path.name)
+    if not m:
+        return None
+    try:
+        return datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+
+
+def select_files(opts: Options) -> list[Path]:
+    files = [
+        p
+        for p in opts.directory.iterdir()
+        if p.suffix.lower() in FITS_SUFFIXES and not p.name.startswith(".")
+    ]
+    picked: list[tuple[datetime, str, Path]] = []
+    for p in files:
+        stamp = file_stamp(p)
+        if stamp is not None:
+            if opts.since and stamp < opts.since:
+                continue
+            if opts.until and stamp >= opts.until:
+                continue
+        picked.append((stamp or datetime.max, p.name, p))
+    return [p for _, _, p in sorted(picked)]
+
+
+# ------------------------------------------------------------------ loading
+
+
+def load_rgb(path: Path) -> tuple[FloatImage, datetime | None]:
+    """Read a FITS frame as sky-subtracted float32 RGB plus its DATE-OBS."""
+    from astropy.io import fits
+
+    with fits.open(path, memmap=False) as hdul:
+        hdu = next(h for h in hdul if h.data is not None and h.data.ndim >= 2)
+        data = np.asarray(hdu.data)
+        header = hdu.header
+    obs_time: datetime | None = None
+    if date_obs := header.get("DATE-OBS"):
+        try:
+            obs_time = datetime.fromisoformat(str(date_obs))
+            if exposure := header.get("EXPTIME") or header.get("EXPOSURE"):
+                obs_time += timedelta(seconds=float(exposure) / 2)
+        except ValueError:
+            obs_time = None
+
+    if data.ndim == 3:  # already colour: FITS stores it channel-first
+        rgb = np.moveaxis(data, 0, -1).astype(np.float32)[..., :3]
+    else:
+        pattern = str(header.get("BAYERPAT", "")).strip().upper()
+        if pattern in BAYER_CODES:
+            if data.dtype != np.uint16:
+                data = np.clip(data, 0, 65535).astype(np.uint16)
+            rgb = cv2.cvtColor(data, BAYER_CODES[pattern]).astype(np.float32)
+        else:
+            rgb = np.repeat(data.astype(np.float32)[..., None], 3, axis=2)
+
+    sky = np.median(rgb[::4, ::4].reshape(-1, 3), axis=0)
+    rgb -= sky.astype(np.float32)
+    return rgb, obs_time
+
+
+def find_stars(rgb: FloatImage) -> tuple[np.ndarray, np.ndarray]:
+    """Star centroids (x, y) and fluxes, brightest first."""
+    import sep
+
+    lum = np.ascontiguousarray(rgb.mean(axis=2), dtype=np.float32)
+    bkg = sep.Background(lum, bw=64, bh=64)
+    objects = sep.extract(lum - bkg.back(), 5.0, err=bkg.globalrms, minarea=6)
+    order = np.argsort(objects["flux"])[::-1]
+    xy = np.column_stack([objects["x"], objects["y"]])[order]
+    return xy, objects["flux"][order]
+
+
+def build_reference(path: Path) -> Reference:
+    rgb, _ = load_rgb(path)
+    xy, fluxes = find_stars(rgb)
+    if len(xy) < 6:
+        sys.exit(f"fitsanim: only {len(xy)} stars in reference frame {path.name}")
+
+    # White balance: make the typical unsaturated star neutral.
+    h, w = rgb.shape[:2]
+    ratios: list[np.ndarray] = []
+    for x, y in xy[:400]:
+        xi, yi = round(float(x)), round(float(y))
+        if not (4 <= xi < w - 4 and 4 <= yi < h - 4):
+            continue
+        box = rgb[yi - 3 : yi + 4, xi - 3 : xi + 4]
+        if box.max() > 40000:
+            continue
+        flux = box.reshape(-1, 3).sum(axis=0)
+        if flux.min() > 0:
+            ratios.append(flux[1] / flux)
+    gains = np.median(ratios, axis=0) if len(ratios) >= 10 else np.ones(3)
+    return Reference(
+        stars=xy[:MAX_STARS],
+        fluxes=fluxes[:MAX_STARS],
+        star_count=len(xy),
+        gains=(float(gains[0]), float(gains[1]), float(gains[2])),
+    )
+
+
+_REF: Reference | None = None
+_NORMALIZE = True
+
+
+def _init_worker(ref: Reference, normalize: bool) -> None:
+    global _REF, _NORMALIZE
+    _REF, _NORMALIZE = ref, normalize
+    cv2.setNumThreads(1)
+
+
+def register(path: Path) -> Sub:
+    """Load one sub and warp it onto the reference frame."""
+    import astroalign
+
+    assert _REF is not None
+    try:
+        rgb, obs_time = load_rgb(path)
+        xy, fluxes = find_stars(rgb)
+    except Exception as exc:  # noqa: BLE001 - unreadable / truncated file
+        return Sub(path=path, ok=False, reason=f"unreadable ({exc})")
+    if len(xy) < max(6, 0.25 * _REF.star_count):
+        return Sub(path=path, ok=False, reason=f"only {len(xy)} stars (cloud?)")
+    try:
+        transform, (src_xy, ref_xy) = astroalign.find_transform(
+            xy[:MAX_STARS], _REF.stars, max_control_points=MAX_STARS
+        )
+    except Exception as exc:  # noqa: BLE001 - astroalign raises several types
+        return Sub(path=path, ok=False, reason=f"no alignment ({type(exc).__name__})")
+    if abs(transform.scale - 1.0) > 0.02:
+        return Sub(path=path, ok=False, reason=f"bad alignment (scale {transform.scale:.3f})")
+
+    h, w = rgb.shape[:2]
+    matrix = np.asarray(transform.params[:2], dtype=np.float64)
+    warped = cv2.warpAffine(
+        rgb, matrix, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0
+    )
+    gains = np.asarray(_REF.gains, dtype=np.float32)
+    if _NORMALIZE:
+        # Haze, dew and airmass dim the stars; scale so matched stars keep
+        # the brightness they have in the reference frame.
+        src_flux = {tuple(p): f for p, f in zip(xy[:MAX_STARS], fluxes)}
+        ref_flux = {tuple(p): f for p, f in zip(_REF.stars, _REF.fluxes)}
+        ratios = [
+            ref_flux[tuple(r)] / src_flux[tuple(s)]
+            for s, r in zip(src_xy, ref_xy)
+            if tuple(s) in src_flux and tuple(r) in ref_flux and src_flux[tuple(s)] > 0
+        ]
+        if len(ratios) >= 5:
+            gains = gains * float(np.clip(np.median(ratios), 0.5, 4.0))
+    warped *= gains
+    return Sub(path=path, ok=True, obs_time=obs_time, image=warped)
+
+
+# ----------------------------------------------------------------- stacking
+
+
+def stacks(subs: Iterator[Sub], opts: Options) -> Iterator[tuple[FloatImage, datetime | None]]:
+    """Group registered subs into (rolling) stacks."""
+    step = opts.step or opts.stack
+    window: deque[Sub] = deque(maxlen=opts.stack)
+    since_emit = 0
+    for sub in subs:
+        window.append(sub)
+        since_emit += 1
+        if len(window) == opts.stack and since_emit >= step:
+            since_emit = 0
+            yield combine(list(window), opts)
+    if since_emit and len(window) >= max(1, opts.stack // 2) and since_emit >= step // 2:
+        yield combine(list(window), opts)
+
+
+def combine(window: list[Sub], opts: Options) -> tuple[FloatImage, datetime | None]:
+    cube = np.stack([s.image for s in window if s.image is not None])
+    if len(cube) == 1:
+        image = cube[0]
+    elif opts.combine == "median":
+        image = np.median(cube, axis=0)
+    else:
+        image = cube.mean(axis=0)
+    times = [s.obs_time for s in window if s.obs_time is not None]
+    mid = times[0] + (times[-1] - times[0]) / 2 if times else None
+    return image.astype(np.float32), mid
+
+
+def fit_stretch(image: FloatImage, opts: Options) -> Stretch:
+    lum = image.mean(axis=2)[::2, ::2]
+    median = float(np.median(lum))
+    sigma = 1.4826 * float(np.median(np.abs(lum - median)))
+    black = median - opts.shadow_sigma * sigma
+    white = max(float(image.max()), black + 100 * sigma + 1.0)
+    x = (median - black) / (white - black)
+    t = opts.background
+    mid = (t - 1.0) * x / ((2.0 * t - 1.0) * x - t)
+    return Stretch(black=black, white=white, mid=float(np.clip(mid, 1e-6, 0.5)))
+
+
+def render(image: FloatImage, when: datetime | None, stretch: Stretch, opts: Options) -> np.ndarray:
+    if opts.crop:
+        x, y, w, h = opts.crop
+        image = image[y : y + h, x : x + w]
+    if opts.mono:
+        image = np.repeat(image.mean(axis=2, keepdims=True), 3, axis=2)
+    frame = stretch.apply(image)
+    if opts.scale != 1.0:
+        interp = cv2.INTER_CUBIC if opts.scale > 1 else cv2.INTER_AREA
+        frame = cv2.resize(frame, None, fx=opts.scale, fy=opts.scale, interpolation=interp)
+    h, w = frame.shape[:2]
+    frame = np.ascontiguousarray(frame[: h - h % 2, : w - w % 2])  # h264 wants even sizes
+    if opts.label and when is not None:
+        text = when.strftime("%Y-%m-%d %H:%M UTC")
+        size = max(0.45, frame.shape[1] / 1400)
+        origin = (int(12 * size), frame.shape[0] - int(14 * size))
+        thick = max(1, round(size * 1.6))
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(frame, text, origin, font, size, (0, 0, 0), thick + 2, cv2.LINE_AA)
+        cv2.putText(frame, text, origin, font, size, (235, 235, 235), thick, cv2.LINE_AA)
+    return frame
+
+
+# ----------------------------------------------------------------- encoding
+
+
+def encode(frames: list[np.ndarray], opts: Options) -> None:
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        sys.exit("fitsanim: ffmpeg not found on PATH")
+    h, w = frames[0].shape[:2]
+    cmd = [ffmpeg, "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24"]
+    cmd += ["-s", f"{w}x{h}", "-r", f"{opts.fps:g}", "-i", "-"]
+    if opts.output.suffix.lower() == ".gif":
+        cmd += ["-vf", "split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer"]
+        cmd += ["-loop", "0"]
+    else:
+        cmd += ["-c:v", "libx264", "-crf", "20", "-preset", "slow", "-pix_fmt", "yuv420p"]
+        cmd += ["-movflags", "+faststart"]
+    cmd.append(str(opts.output))
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    assert proc.stdin is not None
+    for frame in frames:
+        proc.stdin.write(frame.tobytes())
+    proc.stdin.close()
+    if proc.wait() != 0:
+        sys.exit("fitsanim: ffmpeg failed")
+
+
+# --------------------------------------------------------------------- main
+
+
+def parse_args(argv: list[str] | None = None) -> Options:
+    ap = argparse.ArgumentParser(
+        prog="fitsanim",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument("directory", type=Path, help="directory of FITS subs")
+    ap.add_argument("-o", "--output", type=Path, help=".mp4 or .gif (default: ./<dir name>.mp4)")
+    ap.add_argument("--night", type=parse_when, help="YYYYMMDD: noon that day to noon the next")
+    ap.add_argument("--since", type=parse_when, help="first sub, local time as in the filename")
+    ap.add_argument("--until", type=parse_when, help="stop before this time")
+    ap.add_argument("--stack", type=int, default=10, help="subs combined per frame (default 10)")
+    ap.add_argument(
+        "--step", type=int, default=0, help="subs advanced per frame (default: --stack)"
+    )
+    ap.add_argument("--combine", choices=["median", "mean"], default="median")
+    ap.add_argument("--fps", type=float, default=10.0)
+    ap.add_argument("--background", type=float, default=0.15, help="stretched sky level, 0-1")
+    ap.add_argument("--shadow-sigma", type=float, default=2.8, help="black point, sigmas below sky")
+    ap.add_argument("--crop", help="X,Y,W,H in reference-frame pixels, before --scale")
+    ap.add_argument("--scale", type=float, default=1.0, help="resize factor for the output")
+    ap.add_argument("--mono", action="store_true", help="greyscale output")
+    ap.add_argument("--no-label", dest="label", action="store_false", help="omit the timestamp")
+    ap.add_argument(
+        "--no-normalize",
+        dest="normalize",
+        action="store_false",
+        help="keep each sub's own brightness instead of matching star fluxes to the reference",
+    )
+    ap.add_argument("-j", "--jobs", type=int, default=0, help="worker processes (default: auto)")
+    ns = ap.parse_args(argv)
+
+    since, until = ns.since, ns.until
+    if ns.night:
+        noon = ns.night.replace(hour=12, minute=0, second=0)
+        since, until = since or noon, until or noon + timedelta(days=1)
+    crop = None
+    if ns.crop:
+        try:
+            x, y, w, h = (int(v) for v in ns.crop.split(","))
+            crop = (x, y, w, h)
+        except ValueError:
+            ap.error("--crop wants X,Y,W,H")
+    directory = ns.directory.expanduser()
+    if not directory.is_dir():
+        ap.error(f"{directory} is not a directory")
+    output = ns.output or Path(f"{directory.name.replace(' ', '_')}.mp4")
+    return Options(
+        directory=directory,
+        output=output.expanduser(),
+        since=since,
+        until=until,
+        stack=ns.stack,
+        step=ns.step,
+        combine=ns.combine,
+        fps=ns.fps,
+        background=ns.background,
+        shadow_sigma=ns.shadow_sigma,
+        crop=crop,
+        scale=ns.scale,
+        mono=ns.mono,
+        label=ns.label,
+        normalize=ns.normalize,
+        jobs=ns.jobs,
+    )
+
+
+def main() -> None:
+    opts = parse_args()
+    files = select_files(opts)
+    if not files:
+        sys.exit("fitsanim: no FITS files match")
+    ref_path = files[len(files) // 2]
+    ref = build_reference(ref_path)
+    print(
+        f"{len(files)} subs, {files[0].name} .. {files[-1].name}\n"
+        f"reference {ref_path.name}: {ref.star_count} stars, "
+        f"white balance R x{ref.gains[0]:.2f} B x{ref.gains[2]:.2f}",
+        file=sys.stderr,
+    )
+
+    import os
+
+    jobs = opts.jobs or max(1, min(8, (os.cpu_count() or 2) - 1))
+    rejected: list[Sub] = []
+    done = 0
+
+    def good_subs(results: Iterator[Sub]) -> Iterator[Sub]:
+        nonlocal done
+        for sub in results:
+            done += 1
+            if done % 25 == 0 or done == len(files):
+                print(f"\r  registered {done}/{len(files)}", end="", file=sys.stderr, flush=True)
+            if sub.ok:
+                yield sub
+            else:
+                rejected.append(sub)
+
+    frames: list[np.ndarray] = []
+    stretch: Stretch | None = None
+    with ProcessPoolExecutor(
+        jobs, initializer=_init_worker, initargs=(ref, opts.normalize)
+    ) as pool:
+        for image, when in stacks(good_subs(pool.map(register, files, chunksize=2)), opts):
+            if stretch is None:
+                stretch = fit_stretch(image, opts)
+            frames.append(render(image, when, stretch, opts))
+    print(file=sys.stderr)
+
+    for sub in rejected:
+        print(f"  skipped {sub.path.name}: {sub.reason}", file=sys.stderr)
+    if not frames:
+        sys.exit("fitsanim: no frames survived registration")
+    encode(frames, opts)
+    h, w = frames[0].shape[:2]
+    print(
+        f"{opts.output}: {len(frames)} frames, {w}x{h}, {len(frames) / opts.fps:.1f}s "
+        f"({len(files) - len(rejected)} subs used, {len(rejected)} skipped)",
+        file=sys.stderr,
+    )
+
+
+if __name__ == "__main__":
+    main()
