@@ -40,6 +40,14 @@
  * turns it off for a headless run. `/guardrails off|on|status`, `/budget N` (or
  * `PI_GUARD_BUDGET=N` for a `-p` run, where no command can be typed: faultline's
  * run-brief.sh sets it from the budget the brief states), `/fence allow <path>`.
+ *
+ * `PI_GUARD_ALLOW` (colon-separated absolute paths, `~/` allowed) adds trees to the
+ * fence at session start, for a headless run where `/fence allow` cannot be typed:
+ * the foreman sets it to a sandboxed worker's `sandbox_read` paths so the worker can
+ * read a sibling repo. The fence cannot tell reading from writing, so an entry is
+ * writable as far as the fence goes; read-only has to come from whatever set the
+ * variable (the foreman's kernel sandbox mounts those paths read-only). It does not
+ * by itself turn the guard on in a chat.
  */
 
 import { readdirSync } from "node:fs";
@@ -53,6 +61,17 @@ export const DEFAULT_BUDGET = 12;
 export function envBudget(raw: string | undefined): number {
 	const n = Number.parseInt(raw ?? "", 10);
 	return Number.isFinite(n) && n > 0 && String(n) === (raw ?? "").trim() ? n : DEFAULT_BUDGET;
+}
+/** The extra fence roots `PI_GUARD_ALLOW` asks for: absolute (or `~/`) paths, colon-separated; anything else is dropped. */
+export function envAllow(raw: string | undefined): string[] {
+	const out: string[] = [];
+	for (const part of (raw ?? "").split(":")) {
+		const p = expand(part.trim());
+		if (!isAbsolute(p)) continue;
+		const abs = resolve(p);
+		if (abs !== "/" && !out.includes(abs)) out.push(abs);
+	}
+	return out;
 }
 /**
  * Whether the guard starts enabled. `--no-guardrails` always wins; a headless run (no UI)
@@ -157,14 +176,14 @@ export interface GuardState {
 	scoutOut?: string;
 }
 
-export function newState(cwd: string, enabled = true, budget = DEFAULT_BUDGET, scoutOut?: string): GuardState {
+export function newState(cwd: string, enabled = true, budget = DEFAULT_BUDGET, scoutOut?: string, allow: string[] = []): GuardState {
 	const s: GuardState = {
 		enabled,
 		budget,
 		calls: 0,
 		edited: false,
 		refusals: 0,
-		fence: { cwd: resolve(cwd), allow: [...DEFAULT_ALLOW] },
+		fence: { cwd: resolve(cwd), allow: [...DEFAULT_ALLOW, ...allow] },
 	};
 	setScoutOut(s, scoutOut);
 	return s;
@@ -267,6 +286,7 @@ export default function (pi: ExtensionAPI) {
 			defaultEnabled({ hasUI: ctx.hasUI, noGuardrails: !!pi.getFlag("no-guardrails"), guardrails: !!pi.getFlag("guardrails"), env: process.env }),
 			envBudget(process.env.PI_GUARD_BUDGET),
 			process.env.PI_GUARD_SCOUT_OUT,
+			envAllow(process.env.PI_GUARD_ALLOW),
 		));
 
 	pi.on("agent_start", (_event, ctx) => {

@@ -1,7 +1,7 @@
 // Run from the dotfiles tree: bun test dot_pi/agent/extensions
 
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_BUDGET, defaultEnabled, envBudget, type Fence, fenceBash, fencePath, MAX_REFUSALS, newState, onAgentStart, onToolCall, onToolResult, SCOUT_LIFT, SCOUT_MAX_REFUSALS, setScoutOut } from "./guardrails.ts";
+import { DEFAULT_BUDGET, defaultEnabled, envAllow, envBudget, type Fence, fenceBash, fencePath, MAX_REFUSALS, newState, onAgentStart, onToolCall, onToolResult, SCOUT_LIFT, SCOUT_MAX_REFUSALS, setScoutOut } from "./guardrails.ts";
 
 const CWD = "/export/home/erewhon/code/smithy/forge";
 const HOME = "/export/home/erewhon";
@@ -235,6 +235,30 @@ describe("PI_GUARD_BUDGET", () => {
 		expect(call("bash")).toBeUndefined();
 		expect(call("bash")).toBeUndefined();
 		expect(call("bash")?.reason).toMatch(/Tool budget spent \(3 calls\)/);
+	});
+});
+
+describe("PI_GUARD_ALLOW", () => {
+	test("absolute and ~/ paths are kept, resolved and deduplicated; the rest is dropped", () => {
+		expect(envAllow(undefined)).toEqual([]);
+		expect(envAllow("")).toEqual([]);
+		expect(envAllow("/srv/a:/srv/b/../c: /srv/a ")).toEqual(["/srv/a", "/srv/c"]);
+		expect(envAllow("relative/dir:../up:/")).toEqual([]);
+		const home = process.env.HOME ?? "";
+		expect(envAllow("~/code/sibling")).toEqual([`${home}/code/sibling`]);
+	});
+	test("an allowed tree is inside the fence for path tools and bash; its neighbours are not", () => {
+		const s = newState(CWD, true, DEFAULT_BUDGET, undefined, envAllow("/var/oracle"));
+		s.fence.roots = roots;
+		expect(fencePath("/var/oracle/tests/test_x.py", s.fence)).toBeUndefined();
+		expect(fenceBash("cat /var/oracle/tests/test_x.py", s.fence)).toBeUndefined();
+		expect(fencePath("/var/oracle-other/x", s.fence)).toBeDefined();
+		expect(fenceBash("cat /var/secret", s.fence)).toBeDefined();
+	});
+	test("without the variable the fence is the default one", () => {
+		const s = newState(CWD);
+		s.fence.roots = roots;
+		expect(fencePath("/var/oracle/x", s.fence)).toBeDefined();
 	});
 });
 
