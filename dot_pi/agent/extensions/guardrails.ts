@@ -141,7 +141,10 @@ export function fencePath(raw: string, fence: Fence): string | undefined {
 // Absolute paths, ~ and $HOME, and relative paths that climb. URLs (://) and
 // option values without a slash never match; a `/word/...` token only counts
 // when `word` is a top-level directory here, so sed and grep patterns pass.
-const PATH_RE = /(?<![\w@:.=-])(~(?:\/[^\s"'`;|&)]*)?|\$HOME(?:\/[^\s"'`;|&)]*)?|\/[^\s"'`;|&)]*|\.\.(?:\/[^\s"'`;|&)]*)?)/g;
+// A tilde straight before a digit is prose ("~90 lines"), not the home
+// directory: the shell leaves it alone too. `~name` (another user's home)
+// still counts.
+const PATH_RE = /(?<![\w@:.=-])(~(?!\d)(?:\/[^\s"'`;|&)]*)?|\$HOME(?:\/[^\s"'`;|&)]*)?|\/[^\s"'`;|&)]*|\.\.(?:\/[^\s"'`;|&)]*)?)/g;
 const CD_RE = /(?:^|[;&|(]\s*)cd\s+([^\s;|&)]+)/g;
 const ROOT_WALK_RE = /(^|[\s;&|(])(find|ls|grep|rg|fd|tree|du|locate)\s+(-\S+\s+)*\/(\s|$)/;
 

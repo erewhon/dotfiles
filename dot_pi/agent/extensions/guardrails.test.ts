@@ -238,6 +238,19 @@ describe("PI_GUARD_BUDGET", () => {
 	});
 });
 
+describe("tilde in prose", () => {
+	const fence: Fence = { cwd: CWD, allow: [], roots };
+	test("a tilde before a number is an approximation, not the home directory", () => {
+		expect(fenceBash("journal add -t t -s DONE <<'EOF'\nread lines ~90-99 of the file, ~3 tool calls\nEOF", fence)).toBeUndefined();
+		expect(fenceBash("echo 'took ~45s'", fence)).toBeUndefined();
+	});
+	test("the home directory and other users' homes are still outside", () => {
+		expect(fenceBash("cat ~/.ssh/config", fence)).toBeDefined();
+		expect(fenceBash("ls ~", fence)).toBeDefined();
+		expect(fenceBash("cat ~root/.bashrc", fence)).toBeDefined();
+	});
+});
+
 describe("PI_GUARD_ALLOW", () => {
 	test("absolute and ~/ paths are kept, resolved and deduplicated; the rest is dropped", () => {
 		expect(envAllow(undefined)).toEqual([]);
