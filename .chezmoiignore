@@ -52,9 +52,15 @@ README.md
 .config/iterm
 .config/kitty
 .config/sketchybar
-.config/waybar
 .config/wezterm
 .local/share/konsole
+{{ end }}
+
+# Waybar config also goes to work machines, even ones answered "remote" at
+# init (an unknown Linux box defaults to remote). Only home servers skip it.
+# Installing and starting the bar is still gated to desks by 47-waybar.
+{{ if and (get $host "is_remote") (get $host "is_personal") }}
+.config/waybar
 {{ end }}
 
 # Skip personal-only configs on non-personal hosts
