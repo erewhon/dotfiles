@@ -34,6 +34,17 @@
 {{-   if hasKey .host_overrides "is_personal" }}{{ $homeDefault = .host_overrides.is_personal }}{{ end -}}
 {{-   if hasKey .host_overrides "is_remote" }}{{ $remoteDefault = .host_overrides.is_remote }}{{ end -}}
 {{- end -}}
+{{- /* Omarchy (Arch + Hyprland) is detected, not asked: it decides whose
+       desktop configs win and that packages come from pacman, not Linuxbrew. */ -}}
+{{- $omarchy := false -}}
+{{- if and (eq .chezmoi.os "linux") (hasKey .chezmoi "osRelease") -}}
+{{-   $omarchy = eq (get .chezmoi.osRelease "id") "omarchy" -}}
+{{- end -}}
+{{- /* An Omarchy box is a desktop by definition, so default it to not-remote
+       unless an answer is already stored. */ -}}
+{{- if and $omarchy (not (and (hasKey . "host_overrides") (hasKey .host_overrides "is_remote"))) -}}
+{{-   $remoteDefault = false -}}
+{{- end -}}
 {{- $home := promptBoolOnce . "host_overrides.is_personal" "home" $homeDefault -}}
 {{- $remote := promptBoolOnce . "host_overrides.is_remote" "remote" $remoteDefault -}}
 # Rendered by `chezmoi init` from .chezmoi.toml.tmpl — edit the template, not this file.
@@ -57,3 +68,10 @@ encryption = "age"
     # Package managers are a fact of the box, not a choice: detect them.
     has_apt = {{ not (not (lookPath "apt-get")) }}
     has_dnf = {{ not (not (lookPath "dnf")) }}
+    has_pacman = {{ not (not (lookPath "pacman")) }}
+    is_omarchy = {{ $omarchy }}
+{{- if $omarchy }}
+    # Omarchy ships its tools through pacman and mise; a second copy from
+    # Linuxbrew would shadow them on PATH.
+    has_brew = false
+{{- end }}

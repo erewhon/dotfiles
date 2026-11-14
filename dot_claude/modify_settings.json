@@ -1,0 +1,39 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /*
+~/.claude/settings.json has more than one writer. The settings I want live in
+.chezmoitemplates/claude-settings; this modify template lays them over the
+file on disk and keeps what other tools put there:
+
+  - `theme` and `tui`: Omarchy's theme switcher rewrites `theme` with jq, and
+    both are per-machine taste rather than policy.
+  - hook entries whose command mentions herdr: herdr installs a SessionStart
+    hook that reports agent state to its panes, and reinstalls it on update.
+
+Everything else is pinned to the template. When the result already matches
+the file, stdin is echoed byte-for-byte, so another tool's JSON formatting
+does not show up as drift in `chezmoi status`.
+*/ -}}
+{{- $want := includeTemplate "claude-settings" . | fromJson -}}
+{{- $cur := dict -}}
+{{- if trim .chezmoi.stdin }}{{ $cur = .chezmoi.stdin | fromJson }}{{ end -}}
+{{- range $key := list "theme" "tui" -}}
+{{-   if hasKey $cur $key }}{{ $_ := set $want $key (get $cur $key) }}{{ end -}}
+{{- end -}}
+{{- $hooks := get $want "hooks" | default dict -}}
+{{- range $event, $entries := (get $cur "hooks" | default dict) -}}
+{{-   range $entry := $entries -}}
+{{-     $foreign := false -}}
+{{-     range $h := (get $entry "hooks" | default list) -}}
+{{-       if contains "herdr" (get $h "command" | default "") }}{{ $foreign = true }}{{ end -}}
+{{-     end -}}
+{{-     if $foreign -}}
+{{-       $_ := set $hooks $event (append (get $hooks $event | default list) $entry) -}}
+{{-     end -}}
+{{-   end -}}
+{{- end -}}
+{{- $_ := set $want "hooks" $hooks -}}
+{{- if deepEqual $cur $want -}}
+{{ .chezmoi.stdin }}
+{{- else -}}
+{{ $want | toPrettyJson }}
+{{- end -}}

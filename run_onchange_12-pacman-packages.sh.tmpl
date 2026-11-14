@@ -1,0 +1,44 @@
+#!/bin/sh
+# {{ include "dot_config/packages/pacman-packages.txt" | sha256sum }}
+# Install Arch packages when pacman-packages.txt changes.
+
+{{ $host := includeTemplate "host-profile" . | fromJson -}}
+
+{{ if not (get $host "has_pacman") -}}
+echo "[12-pacman-packages] skipping: host has no pacman"
+exit 0
+{{ else -}}
+
+set -e
+
+echo "[12-pacman-packages] installing pacman packages..."
+
+# Read package list, strip comments and blank lines. "aur:" lines go to yay.
+packages=""
+aur_packages=""
+while IFS= read -r line; do
+    line=$(echo "$line" | sed 's/#.*//' | xargs)
+    [ -z "$line" ] && continue
+    case "$line" in
+        aur:*) aur_packages="$aur_packages ${line#aur:}" ;;
+        *)     packages="$packages $line" ;;
+    esac
+done < "$HOME/.config/packages/pacman-packages.txt"
+
+if [ -n "$packages" ]; then
+    # shellcheck disable=SC2086
+    sudo pacman -S --needed --noconfirm $packages
+fi
+
+if [ -n "$aur_packages" ]; then
+    if command -v yay >/dev/null 2>&1; then
+        # shellcheck disable=SC2086
+        yay -S --needed --noconfirm $aur_packages ||
+            echo "[12-pacman-packages] warning: AUR install failed:$aur_packages"
+    else
+        echo "[12-pacman-packages] skipping AUR packages (no yay):$aur_packages"
+    fi
+fi
+
+echo "[12-pacman-packages] done"
+{{ end -}}

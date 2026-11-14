@@ -1,3 +1,13 @@
+{{- $host := includeTemplate "host-profile" . | fromJson -}}
+{{- if get $host "is_omarchy" -}}
+# Omarchy variant. Colours follow the current Omarchy theme; remove the
+# include to disconnect Kitty from it. Settings below override Omarchy's
+# defaults in /etc/xdg/kitty/kitty.conf.
+include ~/.local/state/omarchy/current/theme/kitty.conf
+
+# Font
+font_family JetBrainsMono Nerd Font Mono
+{{- else -}}
 # Kitty config. Values mirror the Konsole "Erewhon" profile.
 
 # Font
@@ -13,3 +23,4 @@ background_blur 80
 
 # Colours
 include breeze.conf
+{{- end }}

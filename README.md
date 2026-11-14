@@ -51,6 +51,21 @@ the other.
 `.chezmoi.toml.tmpl` changes, chezmoi warns until you re-run `chezmoi init`
 (no repo argument needed; existing answers are kept).
 
+## Omarchy (Arch + Hyprland)
+
+Detected at init from `/etc/os-release` (`is_omarchy`, `has_pacman`); nothing is
+asked. On these hosts:
+
+- Packages come from `dot_config/packages/pacman-packages.txt`, not the Brewfile
+  (`has_brew` is forced off so Linuxbrew cannot shadow Omarchy's mise tools).
+- `rc.d/06-omarchy.zsh` gives zsh what Omarchy only wires up for bash: its PATH
+  bootstrap and `mise activate`.
+- ghostty, kitty and nvim keep following the Omarchy theme; starship and tmux
+  are mine. `~/.config/hypr` and `~/.config/omarchy/defaults` are managed here
+  (not `monitors.lua` or `shell.json`, which are per machine).
+- `~/.claude/settings.json` is a modify template that keeps herdr's hook and
+  the `theme`/`tui` keys Omarchy writes.
+
 Pull latest changes and apply:
 
     chezmoi update

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # bootstrap — set up a new Linux machine with dotfiles.
 # Installs prerequisites, Linuxbrew, chezmoi, and applies dotfiles.
+# On Arch / Omarchy there is no Linuxbrew step: packages come from pacman
+# (dot_config/packages/pacman-packages.txt) during `chezmoi apply`.
 # Idempotent — safe to re-run if something fails partway through.
 #
 # Usage (on a fresh machine):
@@ -99,8 +101,10 @@ if command -v apt-get &>/dev/null; then
     PKG_MGR="apt"
 elif command -v dnf &>/dev/null; then
     PKG_MGR="dnf"
+elif command -v pacman &>/dev/null; then
+    PKG_MGR="pacman"
 else
-    echo "error: neither apt-get nor dnf found. This script requires Debian/Ubuntu or Fedora." >&2
+    echo "error: none of apt-get, dnf or pacman found. This script requires Debian/Ubuntu, Fedora or Arch." >&2
     exit 1
 fi
 
@@ -142,6 +146,20 @@ elif [[ "$PKG_MGR" == "dnf" ]]; then
     else
         skip_msg
     fi
+elif [[ "$PKG_MGR" == "pacman" ]]; then
+    NEEDED=()
+    for pkg in git curl zsh chezmoi; do
+        if ! pacman -Q "$pkg" &>/dev/null; then
+            NEEDED+=("$pkg")
+        fi
+    done
+
+    if [[ ${#NEEDED[@]} -gt 0 ]]; then
+        sudo pacman -S --needed --noconfirm "${NEEDED[@]}"
+        done_msg
+    else
+        skip_msg
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -162,7 +180,10 @@ fi
 # ---------------------------------------------------------------------------
 step "Homebrew (Linuxbrew)..."
 
-if [[ -d /home/linuxbrew/.linuxbrew ]]; then
+if [[ "$PKG_MGR" == "pacman" ]]; then
+    # Arch hosts take everything from pacman; see pacman-packages.txt.
+    skipped_msg
+elif [[ -d /home/linuxbrew/.linuxbrew ]]; then
     eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
     skip_msg
 else

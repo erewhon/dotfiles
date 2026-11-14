@@ -110,6 +110,24 @@ README.md
 .claude/skills/wrangler
 {{ end }}
 
+# Omarchy (Arch + Hyprland). It has its own bar and no KDE, and it owns the
+# desktop, so its own configs are managed only there.
+{{ if get $host "is_omarchy" }}
+.config/waybar
+.local/share/konsole
+{{ else }}
+.config/hypr
+.config/omarchy
+# nvim pieces that follow the Omarchy theme (theme.lua links to the file
+# Omarchy renders for the current theme).
+.config/nvim/lua/plugins/all-themes.lua
+.config/nvim/lua/plugins/omarchy-theme-hotreload.lua
+.config/nvim/lua/plugins/lualine-transparent.lua
+.config/nvim/lua/plugins/disable-news-alert.lua
+.config/nvim/lua/plugins/theme.lua
+.config/nvim/plugin/after/transparency.lua
+{{ end }}
+
 # Skip macOS-only configs on Linux
 {{ if eq .chezmoi.os "linux" }}
 .amethyst.yml

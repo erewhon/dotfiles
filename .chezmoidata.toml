@@ -14,6 +14,8 @@ has_gui = true
 has_brew = true
 has_apt = false
 has_dnf = false
+has_pacman = false
+is_omarchy = false
 is_personal = false
 
 [hosts.archimedes]

@@ -1,6 +1,6 @@
 [user]
 	name = Steven Byrnes
-	email = steven@byrnes.org
+	email = erewhon@flatland.org
     signingkey = B057CF83D94AC81F
 
 
@@ -9,6 +9,7 @@
 
 [rerere]
 	enabled = true
+	autoupdate = true            # Apply recorded conflict resolutions automatically
 
 [filter "lfs"]
 	process = git-lfs filter-process
@@ -19,8 +20,25 @@
 [pull]
     ff = only
 
+[push]
+    autoSetupRemote = true       # Set the upstream branch on first push
+
 [diff]
     colorMoved = default
+    algorithm = histogram        # Clearer diffs on moved/edited lines
+    mnemonicPrefix = true        # i/ w/ c/ prefixes instead of a/ b/
+
+[commit]
+    verbose = true               # Show the diff in the commit message editor
+
+[column]
+    ui = auto                    # Lay out branch/tag lists in columns
+
+[branch]
+    sort = -committerdate        # Most recently committed branches first
+
+[tag]
+    sort = -version:refname      # Sort version numbers as versions
 
 [core]
     pager = delta
@@ -46,4 +64,8 @@
 [init]
 	defaultBranch = main
 [alias]
+	co = checkout
+	br = branch
+	ci = commit
+	st = status
 	change-commits = "!f() { VAR=$1; OLD=$2; NEW=$3; shift 3; git filter-branch --env-filter \"if [[ \\\"$`echo $VAR`\\\" = '$OLD' ]]; then export $VAR='$NEW'; fi\" $@; }; f"

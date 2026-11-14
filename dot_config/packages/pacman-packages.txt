@@ -1,0 +1,78 @@
+# Arch / Omarchy packages managed by chezmoi (the pacman counterpart of the
+# Brewfile, since Arch hosts do not use Linuxbrew).
+# One package per line. Comments with #. A line starting with "aur:" is
+# installed with yay when yay is present.
+#
+# Not listed on purpose:
+#   - what Omarchy already installs (bat, eza, fd, fzf, ripgrep, zoxide, jq,
+#     starship, tmux, neovim, btop, lazygit, gum, fastfetch, ffmpeg, ...)
+#   - what Omarchy provides through mise (gh, node, uv, claude, pi, opencode)
+#   - shellcheck, biome, rust-analyzer: not packaged for aarch64 Arch
+
+# Shell
+zsh
+atuin
+direnv
+
+# Core CLI tools
+bat-extras
+csvlens
+diffstat
+duf
+dust
+fx
+git-delta
+git-lfs
+glow
+go-yq
+lnav
+procs
+pv
+rlwrap
+tree
+wget
+xh
+
+# Editor & TUI
+bottom
+broot
+htop
+neovide
+
+# Version control
+jujutsu
+lazyjj
+
+# Development
+age
+chezmoi
+cloc
+just
+pnpm
+prettier
+ruff
+shfmt
+tokei
+typescript
+typos
+
+# Networking & remote
+autossh
+nmap
+rclone
+
+# Tmux session picker (AUR)
+aur:sesh-bin
+
+# Heavier toolchains from the Brewfile. Uncomment on boxes that need them.
+# go
+# rust
+# zig
+# kubectl
+# helm
+# k9s
+# kustomize
+# stern
+# restic
+# graphviz
+# aws-cli
