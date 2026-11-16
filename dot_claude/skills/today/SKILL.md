@@ -1,6 +1,6 @@
 ---
 name: today
-description: The morning briefing over the weekly themes — where each theme stands, what landed overnight, what's waiting on the user, and one suggested first block. Use when the user says "/today", "what's the plan today", "morning briefing", "what did I say we need to do for <project/job>", or "let's start on <theme>". Read-only over the Weekly Themes database (written by /week) plus Forge task activity and the Horizon Backlog (Nous daily notes). Distinct from /week, which plans and replans; /today never writes theme rows and never writes the backlog without an explicit yes.
+description: The morning briefing over the weekly themes — where each theme stands, what landed overnight, what's waiting on the user, and one suggested first block. Use when the user says "/today", "what's the plan today", "morning briefing", "what did I say we need to do for <project/job>", or "let's start on <theme>". Read-only over the Weekly Themes database (written by /week) plus Forge task activity, the foreman digest (inbox asks, halted goals, landed leaves) and the Horizon Backlog (Nous daily notes). Distinct from /week, which plans and replans; /today never writes theme rows and never writes the backlog without an explicit yes.
 ---
 
 # today
@@ -33,14 +33,47 @@ description: The morning briefing over the weekly themes — where each theme st
    matching no theme AND timestamped inside working hours is the drift candidate — see
    Contract (including the after-hours exemption) before mentioning it.
 3. **Waiting on you.** The oversight queue, in order:
-   - Open **waitpoints**, once Waitpoint tokens ships (Wave Control Primitives) — that
-     becomes the primary source. Until then, fall back to:
+   - **The foreman digest** — the primary source today. One Bash call, read with `jq`
+     so only the rows reach context (`--since 72h` on Mondays):
+
+     ```
+     foreman digest --since 24h --json | jq '{inbox_error,
+       halted, waiting: [.waiting[] | {id, kind, goal, project, title, opened}],
+       defaults: (.defaults | length), notes: .session_blocked_notes,
+       landed: [.landed[] | {goal, task, cost_usd, unresolved}], landed_usd}'
+     ```
+
+     `halted` and `waiting` ARE this section: lead with halted goals, then the asks
+     oldest first as `#<id> <goal or project>: <title>` — the id is what the user
+     answers with (`pitf inbox answer|approve|deny|done <id>`). `defaults` is a count
+     only ("2 defaults taken, open to override — `foreman digest`"); never list them,
+     nothing is needed unless the user disagrees. `notes` gets a clause only when
+     non-zero. `landed` feeds **Overnight** (step 2): fold each leaf under its theme,
+     and surface a non-empty `unresolved` as "landed with an open check" — that is the
+     one thing about a landing worth the user's attention. Never paste the digest
+     itself or re-run it as text; the briefing stays inside its line budget and
+     `foreman digest` is the long form.
+     Degrade: `inbox_error` set → one clause ("inbox unreachable — waiting list may be
+     incomplete") and still use `landed`. `foreman` missing or erroring → skip this
+     bullet silently and use the fallbacks below.
+   - Open **waitpoints**, once Waitpoint tokens ships (Wave Control Primitives). Until
+     then, also check:
    - `query_tasks(status="Spec Needed")` rows whose pages say "Escalated by the pipeline"
      (limit to theme projects), and
    - `query_tasks(status="In Progress", execution_mode="Manual")` in theme projects —
      work parked on the user's own plate.
    For `check-ins`-oversight themes this section IS the review queue; lead with it when
    non-empty.
+   **Load line.** One more read, for the trailing clause of this section only:
+
+   ```
+   foreman load --days 2 --json | jq -c '.days[0] | {date, entries, handed_back, peak_waiting}'
+   ```
+
+   That is yesterday (Monday: say so, it is Sunday's row). Render as
+   `yesterday: 7 of 48 turns handed back, peak 3 waiting`. It is a number the user is
+   trying to drive down, not a grade: no adjectives, no advice, and drop the clause
+   entirely when `entries` is 0 or the command fails.
 4. **First block.** ONE suggestion, chosen by: hard deadline in a theme's Outcome/Notes >
    non-empty review queue > the highest-priority theme with an unblocked task
    (`get_next_task(project=...)`). Name the concrete task, not the theme. If the user
@@ -72,7 +105,8 @@ Backlog: <n> today · <n> week · <n> month · <n> year · <n> someday — <n> o
   stale: <title> · <title> · <title>
   yesterday's Scratch is unswept — say "sweep" to file it
 
-Waiting on you (<n>): <item> · <item>
+Waiting on you (<n>): #<id> <goal|project>: <title> · <item>
+  <n> defaults taken, open to override — `foreman digest` · yesterday: <h> of <t> turns handed back, peak <p> waiting
 
 Overnight: <2-4 lines, grouped by theme, only if anything happened>
 
@@ -161,5 +195,9 @@ the usual code-mesh HTTP channel; that's for reading there, never a write path.
   Offer once; the user says yes.
 - Letting the Backlog step grow: one summary line, up to five stale titles, one sweep
   offer. Review happens in the Resurfaced panel, not the briefing.
+- Dumping the foreman digest into the briefing, or listing defaults one by one. The
+  digest exists so the user reads agent output once, at a time they chose; /today
+  carries its headline (who is waiting, what landed with an open check) and points at
+  `foreman digest` for the rest.
 - Fabricating a briefing when the daemon is down — say the store is unreachable and
   fall back to `recent_task_activity` alone if it works, or stop cleanly.
