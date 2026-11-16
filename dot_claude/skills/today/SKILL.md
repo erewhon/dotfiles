@@ -40,7 +40,7 @@ description: The morning briefing over the weekly themes — where each theme st
      foreman digest --since 24h --json | jq '{inbox_error,
        halted, waiting: [.waiting[] | {id, kind, goal, project, title, opened}],
        defaults: (.defaults | length), notes: .session_blocked_notes,
-       landed: [.landed[] | {goal, task, cost_usd, unresolved}], landed_usd}'
+       landed: [.landed[] | {goal, task, cost_usd, unresolved, unreviewed}], landed_usd}'
      ```
 
      `halted` and `waiting` ARE this section: lead with halted goals, then the asks
@@ -49,8 +49,9 @@ description: The morning briefing over the weekly themes — where each theme st
      only ("2 defaults taken, open to override — `foreman digest`"); never list them,
      nothing is needed unless the user disagrees. `notes` gets a clause only when
      non-zero. `landed` feeds **Overnight** (step 2): fold each leaf under its theme,
-     and surface a non-empty `unresolved` as "landed with an open check" — that is the
-     one thing about a landing worth the user's attention. Never paste the digest
+     and surface a non-empty `unresolved` as "landed with an open check" and a non-empty
+     `unreviewed` as "landed UNREVIEWED" (say it first: a gate the policy asked for did
+     not run) — those are the two things about a landing worth the user's attention. Never paste the digest
      itself or re-run it as text; the briefing stays inside its line budget and
      `foreman digest` is the long form.
      Degrade: `inbox_error` set → one clause ("inbox unreachable — waiting list may be
