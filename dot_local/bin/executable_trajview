@@ -1,0 +1,1478 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pydantic>=2", "textual>=1.0"]
+# ///
+"""trajview: browse a coding-agent trajectory step by step (TUI).
+
+    trajview FILE                 open the browser
+    trajview opencode.db          pick a session first (or --session ID/title)
+    trajview --dump FILE          print the collapsed view (also when piped)
+    trajview --dump --step 12 FILE   print one step fully expanded
+
+Reads the same formats as `trajsum` (auto-detected; it borrows trajsum's
+detection, so the two scripts must sit in the same directory): Harbor ATIF,
+pi, Claude Code, Codeium Cortex, Codex rollouts, OpenCode exports and
+OpenCode's SQLite store.
+
+Collapsed, each step is one line:
+
+    #  who  tools  !  time  text
+
+  who    user, agent, tool (a tool-result step) or sys
+  tools  number of tool calls the step made
+  !      a red mark when the step has an error: failed tool call, non-zero
+         exit, API error, parse error, failed status
+  time   wall time since the previous step ended, i.e. model latency plus the
+         step's tool execution (for a user step: how long the user took)
+
+Keys
+  enter/space  expand or collapse       v      full text of the item in a pager
+  j/k  g/G     move                     h      back to the step line, collapse
+  e/E          next/previous error      u/U    next/previous user step
+  /            search, then n/N         +/-    expand/collapse every step
+  q            quit
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import re
+import shlex
+import sqlite3
+import sys
+import textwrap
+from datetime import datetime
+from importlib.machinery import SourceFileLoader
+from pathlib import Path
+from types import ModuleType
+from typing import Any, ClassVar, Literal
+
+from pydantic import BaseModel, Field
+from rich.text import Text
+from textual import on
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import VerticalScroll
+from textual.screen import ModalScreen
+from textual.widgets import Footer, Input, OptionList, Static, Tree
+from textual.widgets.option_list import Option
+from textual.widgets.tree import TreeNode
+
+
+def load_trajsum() -> ModuleType:
+    here = Path(__file__).resolve().parent
+    for name in ("trajsum", "executable_trajsum"):
+        p = here / name
+        if p.exists():
+            sys.dont_write_bytecode = True
+            loader = SourceFileLoader("trajsum", str(p))
+            spec = importlib.util.spec_from_loader("trajsum", loader)
+            assert spec is not None
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["trajsum"] = mod
+            loader.exec_module(mod)
+            return mod
+    sys.exit(f"trajview: trajsum not found next to {Path(__file__).resolve()}")
+
+
+T = load_trajsum()
+ts, text_of, first_key = T.ts, T.text_of, T.first_key
+
+# ---------------------------------------------------------------- model
+
+Role = Literal["user", "agent", "tool", "sys"]
+
+
+class Call(BaseModel):
+    name: str
+    args: Any = None
+    output: str | None = None
+    error: bool = False
+    exit_code: int | None = None
+    duration: float | None = None  # seconds
+    note: str = ""  # status / error text
+
+    @property
+    def title(self) -> str:
+        a = self.args
+        if isinstance(a, dict):
+            for k in ("command", "cmd", "keystrokes", "CommandLine", "Command"):
+                v = a.get(k)
+                if isinstance(v, list):
+                    v = shlex.join(str(x) for x in v)
+                if isinstance(v, str) and v.strip():
+                    return one_line(v)
+            for k in (
+                "file_path", "filePath", "path", "TargetFile", "AbsolutePath",
+                "notebook_path", "pattern", "query", "url", "description",
+            ):  # fmt: skip
+                if isinstance(a.get(k), str) and a[k]:
+                    return one_line(a[k])
+            return one_line(json.dumps(a, ensure_ascii=False, default=str)) if a else ""
+        return one_line(str(a)) if a else ""
+
+
+class Step(BaseModel):
+    n: int = 0
+    role: Role
+    kind: str = ""  # format-specific label, e.g. a Cortex step type
+    start: datetime | None = None
+    end: datetime | None = None
+    elapsed: float | None = None
+    text: str = ""
+    reasoning: str = ""
+    observation: str = ""  # step-level tool output not tied to one call
+    calls: list[Call] = Field(default_factory=list)
+    error: str = ""
+    meta: dict[str, str] = Field(default_factory=dict)
+    raw: list[Any] = Field(default_factory=list)  # source records
+
+    @property
+    def failed(self) -> bool:
+        return bool(self.error) or any(c.error for c in self.calls)
+
+    def seen(self, value: Any) -> None:
+        t = ts(value)
+        if t is None:
+            return
+        if t.tzinfo is None:
+            t = t.astimezone()
+        self.start = min(self.start, t) if self.start else t
+        self.end = max(self.end, t) if self.end else t
+
+    def haystack(self) -> str:
+        parts = [self.text, self.reasoning, self.observation, self.error, self.kind]
+        for c in self.calls:
+            parts += [c.name, fmt_args(c.args), c.output or "", c.note]
+        return "\n".join(parts).lower()
+
+
+class Trajectory(BaseModel):
+    path: str
+    fmt: str
+    agent: str = ""
+    model: str = ""
+    session: str = ""
+    cwd: str = ""
+    steps: list[Step] = Field(default_factory=list)
+
+    def finish(self) -> Trajectory:
+        prev: datetime | None = None
+        for i, s in enumerate(self.steps, 1):
+            s.n = i
+            end = s.end or s.start
+            if end and prev:
+                s.elapsed = max(0.0, (end - prev).total_seconds())
+            elif s.start and s.end and s.end > s.start:
+                s.elapsed = (s.end - s.start).total_seconds()
+            prev = end or prev
+        return self
+
+
+# ---------------------------------------------------------------- helpers
+
+CONTROL = re.compile(
+    r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|[\x00-\x08\x0b-\x1f\x7f]"
+)
+MAX_LINES = 200  # lines of one section shown in the tree; `v` shows everything
+MAX_COLS = 4000
+
+
+def clean(s: str) -> str:
+    return CONTROL.sub("", s.replace("\r\n", "\n").expandtabs(4))
+
+
+def one_line(s: str, width: int = 400) -> str:
+    lines = [ln.strip() for ln in clean(s).strip().splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    out = lines[0][:width]
+    return out + (" ⏎" if len(lines) > 1 else "")
+
+
+def n_lines(s: str) -> int:
+    return s.count("\n") + 1 if s else 0
+
+
+def wrap(body: str, width: int, cap: int | None = MAX_LINES) -> list[str]:
+    width = max(20, width)
+    out: list[str] = []
+    lines = clean(body).split("\n")
+    for i, raw in enumerate(lines):
+        if cap is not None and len(out) >= cap:
+            out.append(f"… {len(lines) - i} more lines (v shows all)")
+            break
+        if len(raw) > MAX_COLS and cap is not None:
+            raw = raw[:MAX_COLS] + f" … (+{len(raw) - MAX_COLS} chars)"
+        if len(raw) <= width:
+            out.append(raw)
+        else:
+            out.extend(textwrap.wrap(raw, width, replace_whitespace=False) or [""])
+    return out
+
+
+def fmt_args(args: Any) -> str:
+    if args is None or args == {}:
+        return ""
+    if isinstance(args, str):
+        return args
+    if not isinstance(args, dict):
+        return json.dumps(args, indent=2, ensure_ascii=False, default=str)
+    out: list[str] = []
+    for k, v in args.items():
+        if isinstance(v, str):
+            if "\n" in v.strip("\n"):
+                out.append(f"{k}:")
+                out.extend("    " + ln for ln in v.strip("\n").split("\n"))
+            else:
+                out.append(f"{k}: {v.strip()}")
+        elif isinstance(v, (dict, list)):
+            body = json.dumps(v, indent=2, ensure_ascii=False, default=str)
+            out.append(f"{k}:")
+            out.extend("    " + ln for ln in body.split("\n"))
+        else:
+            out.append(f"{k}: {v}")
+    return "\n".join(out)
+
+
+def dur(seconds: float | None) -> str:
+    if seconds is None:
+        return ""
+    if seconds < 10:
+        return f"{seconds:.1f}s"
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m{int(seconds % 60):02d}"
+    return f"{int(seconds // 3600)}h{int(seconds % 3600 // 60):02d}m"
+
+
+def human(n: float) -> str:
+    for unit in ("", "k", "M"):
+        if abs(n) < 1000:
+            return f"{n:.0f}{unit}" if unit == "" or n >= 100 else f"{n:.1f}{unit}"
+        n /= 1000
+    return f"{n:.1f}G"
+
+
+def tok_meta(
+    meta: dict[str, str],
+    inp: int = 0,
+    out: int = 0,
+    cache_read: int = 0,
+    cache_write: int = 0,
+    reasoning: int = 0,
+    cost: float = 0.0,
+) -> None:
+    if inp or out or cache_read:
+        s = f"in {human(inp)} out {human(out)}"
+        if cache_read:
+            s += f" cache-read {human(cache_read)}"
+        if cache_write:
+            s += f" cache-write {human(cache_write)}"
+        if reasoning:
+            s += f" reasoning {human(reasoning)}"
+        meta["tokens"] = s
+    if cost:
+        meta["cost"] = f"${cost:.4f}"
+
+
+def jparse(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
+
+
+# ---------------------------------------------------------------- loaders
+
+
+def load_atif(path: Path) -> Trajectory:
+    doc = json.loads(path.read_text())
+    agent = doc.get("agent") or {}
+    t = Trajectory(
+        path=str(path),
+        fmt="atif",
+        agent=" ".join(x for x in (agent.get("name"), agent.get("version")) if x),
+        model=agent.get("model_name") or "",
+        session=doc.get("session_id") or "",
+    )
+    for d in doc.get("steps", []):
+        src = d.get("source")
+        s = Step(
+            role="user" if src == "user" else "agent" if src == "agent" else "sys",
+            kind="" if src in ("user", "agent") else str(src or ""),
+            text=text_of(d.get("message")),
+            reasoning=text_of(d.get("reasoning_content")),
+            raw=[d],
+        )
+        s.seen(d.get("timestamp"))
+        if d.get("model_name"):
+            s.meta["model"] = d["model_name"]
+        m = d.get("metrics") or {}
+        tok_meta(
+            s.meta,
+            m.get("prompt_tokens") or 0,
+            m.get("completion_tokens") or 0,
+            m.get("cached_tokens") or 0,
+            cost=m.get("cost_usd") or 0.0,
+        )
+        by_id: dict[str, Call] = {}
+        for tc in d.get("tool_calls") or []:
+            c = Call(name=tc.get("function_name") or "?", args=tc.get("arguments"))
+            s.calls.append(c)
+            by_id[tc.get("tool_call_id") or ""] = c
+        loose: list[str] = []
+        for r in (d.get("observation") or {}).get("results") or []:
+            body = text_of(r.get("content")) if isinstance(r, dict) else text_of(r)
+            c2 = (
+                by_id.get(r.get("source_call_id") or "")
+                if isinstance(r, dict)
+                else None
+            )
+            if c2 is not None and r.get("source_call_id"):
+                c2.output = body
+            else:
+                loose.append(body)
+        s.observation = "\n".join(loose)
+        if "Previous response had parsing errors" in s.observation:
+            kind = re.search(r"ERROR: ([^\n|]+)", s.observation)
+            s.error = "parse error: " + (kind.group(1).strip() if kind else "unknown")
+        t.steps.append(s)
+    return t.finish()
+
+
+def load_pi(path: Path) -> Trajectory:
+    entries = [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
+    by_id = {e["id"]: e for e in entries if e.get("id")}
+    active: list[dict[str, Any]] = []
+    node = entries[-1] if entries else None
+    while node is not None:  # the active branch of pi's entry tree
+        active.append(node)
+        node = by_id.get(node.get("parentId")) if node.get("parentId") else None
+    active.reverse()
+    header = next((e for e in entries if e.get("type") == "session"), {})
+    t = Trajectory(
+        path=str(path), fmt="pi", agent="pi",
+        session=header.get("id") or "", cwd=header.get("cwd") or "",
+    )  # fmt: skip
+    pending: dict[str, tuple[Step, Call]] = {}
+    for e in active or entries:
+        kind = e.get("type")
+        if kind in ("session", "custom"):
+            continue
+        if kind != "message":
+            s = Step(role="sys", kind=str(kind), raw=[e])
+            s.seen(e.get("timestamp"))
+            s.text = " ".join(
+                f"{k}={v}"
+                for k, v in e.items()
+                if k not in ("type", "id", "parentId", "timestamp")
+                and isinstance(v, (str, int, float))
+            )
+            t.steps.append(s)
+            continue
+        m = e.get("message") or {}
+        role = m.get("role")
+        if role == "toolResult":
+            hit = pending.get(m.get("toolCallId") or "")
+            if hit:
+                step, call = hit
+                call.output = text_of(m.get("content"))
+                call.error = bool(m.get("isError"))
+                if m.get("durationMs") is not None:
+                    call.duration = m["durationMs"] / 1000
+                step.seen(e.get("timestamp"))
+                step.raw.append(e)
+            continue
+        s = Step(role="agent", raw=[e])
+        s.seen(e.get("timestamp"))
+        if role == "user":
+            s.role, s.text = "user", text_of(m.get("content"))
+        elif role == "system":
+            s.role, s.kind = "sys", "system prompt"
+            s.text = text_of(m.get("content")) or "\n\n".join(
+                f"## {k}\n{v}" for k, v in (m.get("sections") or {}).items()
+            )
+        elif role == "bashExecution":
+            s.role, s.kind = "user", "!bash"
+            code = m.get("exitCode")
+            s.calls.append(
+                Call(
+                    name="user-bash",
+                    args={"command": m.get("command")},
+                    output=text_of(m.get("output")),
+                    exit_code=code if isinstance(code, int) else None,
+                    error=bool(code),
+                )
+            )
+        elif role == "assistant":
+            if m.get("model"):
+                t.model = "/".join(x for x in (m.get("provider"), m["model"]) if x)
+                s.meta["model"] = t.model
+            if m.get("stopReason"):
+                s.meta["stop"] = m["stopReason"]
+            u = m.get("usage") or {}
+            tok_meta(
+                s.meta, u.get("input") or 0, u.get("output") or 0,
+                u.get("cacheRead") or 0, u.get("cacheWrite") or 0,
+                u.get("reasoning") or 0, (u.get("cost") or {}).get("total") or 0.0,
+            )  # fmt: skip
+            if m.get("durationMs") is not None:
+                s.meta["model time"] = dur(m["durationMs"] / 1000)
+            if m.get("errorMessage"):
+                s.error = str(m["errorMessage"])
+            blocks = m.get("content") if isinstance(m.get("content"), list) else []
+            s.text = "\n".join(
+                b.get("text") or "" for b in blocks if b.get("type") == "text"
+            )
+            s.reasoning = "\n".join(
+                b.get("thinking") or "" for b in blocks if b.get("type") == "thinking"
+            )
+            for b in blocks:
+                if b.get("type") == "toolCall":
+                    c = Call(name=b.get("name") or "?", args=b.get("arguments"))
+                    s.calls.append(c)
+                    pending[b.get("id") or ""] = (s, c)
+        else:
+            s.role, s.kind, s.text = "sys", str(role), text_of(m.get("content"))
+        t.steps.append(s)
+    return t.finish()
+
+
+def load_claude(path: Path) -> Trajectory:
+    t = Trajectory(path=str(path), fmt="claude", agent="claude-code")
+    pending: dict[str, tuple[Step, Call]] = {}
+    by_msg: dict[str, Step] = {}
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        e = json.loads(line)
+        t.session = t.session or e.get("sessionId") or ""
+        t.cwd = t.cwd or e.get("cwd") or ""
+        if e.get("isSidechain"):
+            continue
+        m = e.get("message") or {}
+        kind = e.get("type")
+        if kind == "user":
+            content = m.get("content")
+            blocks = content if isinstance(content, list) else []
+            results = [
+                b for b in blocks
+                if isinstance(b, dict) and b.get("type") == "tool_result"
+            ]  # fmt: skip
+            for b in results:
+                hit = pending.get(b.get("tool_use_id") or "")
+                if hit:
+                    step, call = hit
+                    call.output = text_of(b.get("content"))
+                    call.error = bool(b.get("is_error"))
+                    step.seen(e.get("timestamp"))
+                    step.raw.append(e)
+            if results:
+                continue
+            s = Step(role="sys" if e.get("isMeta") else "user", raw=[e])
+            s.kind = "meta" if e.get("isMeta") else ""
+            s.text = content if isinstance(content, str) else text_of(content)
+            s.seen(e.get("timestamp"))
+            t.steps.append(s)
+        elif kind == "assistant":
+            mid = m.get("id") or e.get("uuid")
+            s = by_msg.get(mid)
+            if s is None:  # one API response spans several lines sharing message.id
+                s = by_msg[mid] = Step(role="agent")
+                t.steps.append(s)
+                if m.get("model") and m["model"] != "<synthetic>":
+                    t.model = m["model"]
+                    s.meta["model"] = m["model"]
+            s.raw.append(e)
+            s.seen(e.get("timestamp"))
+            u = m.get("usage") or {}
+            tok_meta(
+                s.meta, u.get("input_tokens") or 0, u.get("output_tokens") or 0,
+                u.get("cache_read_input_tokens") or 0,
+                u.get("cache_creation_input_tokens") or 0,
+            )  # fmt: skip
+            if m.get("stop_reason"):
+                s.meta["stop"] = m["stop_reason"]
+            if e.get("isApiErrorMessage") or e.get("error"):
+                s.error = str(e.get("error") or "API error")
+            for b in m.get("content") or []:
+                if b.get("type") == "thinking":
+                    s.reasoning += ("\n" if s.reasoning else "") + (
+                        b.get("thinking") or ""
+                    )
+                elif b.get("type") == "text":
+                    s.text += ("\n" if s.text else "") + (b.get("text") or "")
+                elif b.get("type") == "tool_use":
+                    c = Call(name=b.get("name") or "?", args=b.get("input"))
+                    s.calls.append(c)
+                    pending[b.get("id") or ""] = (s, c)
+        elif kind == "system" and (e.get("content") or e.get("subtype")):
+            s = Step(role="sys", kind=str(e.get("subtype") or "system"), raw=[e])
+            s.text = text_of(e.get("content"))
+            if e.get("level") == "error":
+                s.error = one_line(s.text) or "error"
+            s.seen(e.get("timestamp"))
+            t.steps.append(s)
+    return t.finish()
+
+
+CORTEX_TEXT = {
+    "agent": ("content", "response", "text", "message"),
+    "user": (
+        "content", "text", "message", "user_response", "user_input", "query", "items",
+    ),
+    "tool": (
+        "output", "result", "content", "text", "stdout", "combined_output",
+        "message", "error",
+    ),
+}  # fmt: skip
+
+CORTEX_KNOWN = {
+    "step_index", "source", "type", "status", "created_at", "createdAt",
+    "timestamp", "completed_at", "completedAt", "exit_code", "exitCode",
+}  # fmt: skip
+
+
+def load_cortex(path: Path) -> Trajectory:
+    doc = json.loads(path.read_text())
+    t = Trajectory(path=str(path), fmt="cortex", agent="cortex")
+    if isinstance(doc, dict):
+        t.session = str(
+            first_key(doc, ("trajectory_id", "trajectoryId", "cascade_id", "id")) or ""
+        )
+        model = first_key(doc, ("model", "model_name", "modelName"))
+        t.model = model if isinstance(model, str) else ""
+        t.cwd = str(first_key(doc, ("workspace", "cwd", "workspace_path")) or "")
+    steps = sorted(
+        T.cortex_steps(doc) or [],
+        key=lambda d: d["step_index"] if isinstance(d.get("step_index"), int) else 0,
+    )
+    open_calls: dict[str, list[Call]] = {}
+    for d in steps:
+        kind = T.cortex_norm(d.get("type"))
+        status = T.cortex_norm(d.get("status")) or "DONE"
+        source = T.cortex_norm(d.get("source"))
+        failed = status in T.CORTEX_FAIL or bool(d.get("error"))
+        if kind == "USER_INPUT" or (
+            source.startswith("USER") and kind != "PLANNER_RESPONSE"
+        ):
+            role: Role = "user"
+        elif kind == "PLANNER_RESPONSE" or (source == "MODEL" and "tool_calls" in d):
+            role = "agent"
+        else:
+            role = "tool"
+        s = Step(role=role, kind=kind.lower(), raw=[d])
+        for k in (
+            "created_at",
+            "createdAt",
+            "timestamp",
+            "completed_at",
+            "completedAt",
+        ):
+            s.seen(d.get(k))
+        s.text = text_of(first_key(d, CORTEX_TEXT[role]))
+        if not s.text and role == "tool":  # unknown result shape: show what is there
+            s.text = fmt_args(
+                {
+                    k: v
+                    for k, v in d.items()
+                    if k not in CORTEX_KNOWN and v not in (None, "", [], {})
+                }
+            )
+        if status != "DONE":
+            s.meta["status"] = status
+        if failed:
+            err = d.get("error")
+            s.error = one_line(text_of(err) or str(err or "")) or status
+        if role == "agent":
+            model = first_key(d, ("model", "model_name", "modelName"))
+            if isinstance(model, str):
+                s.meta["model"] = model
+                t.model = t.model or model
+            s.reasoning = text_of(
+                first_key(
+                    d,
+                    ("thinking", "reasoning", "thinking_content", "reasoning_content"),
+                )
+            )
+            tok_meta(
+                s.meta,
+                T.num(d, "input_tokens", "inputTokens", "prompt_tokens"),
+                T.num(d, "output_tokens", "outputTokens", "completion_tokens"),
+                T.num(d, "cache_read_tokens", "cacheReadTokens", "cached_tokens"),
+                T.num(d, "cache_write_tokens", "cacheWriteTokens"),
+                T.num(d, "thinking_tokens", "reasoning_tokens", "thinkingTokens"),
+            )
+            stop = d.get("stop_reason") or d.get("stopReason")
+            if stop:
+                s.meta["stop"] = str(stop)
+            for call in d.get("tool_calls") or d.get("toolCalls") or []:
+                if not isinstance(call, dict):
+                    continue
+                name = str(call.get("name") or call.get("function_name") or "?")
+                args = jparse(
+                    call.get("args") or call.get("arguments") or call.get("input")
+                )
+                c = Call(name=name, args=args)
+                s.calls.append(c)
+                open_calls.setdefault(name, []).append(c)
+        elif role == "tool":
+            code = first_key(d, ("exit_code", "exitCode"))
+            if isinstance(code, int):
+                s.meta["exit"] = str(code)
+                if code != 0:
+                    failed = True
+                    s.error = s.error or f"exit {code}"
+            waiting = open_calls.get(T.CORTEX_RESULT_TOOL.get(kind, kind.lower())) or []
+            if waiting and failed:
+                waiting[0].error = True
+                waiting[0].note = s.error
+            if waiting:
+                waiting.pop(0)
+        t.steps.append(s)
+    return t.finish()
+
+
+def load_codex(path: Path) -> Trajectory:
+    t = Trajectory(path=str(path), fmt="codex", agent="codex")
+    pending: dict[str, tuple[Step, Call]] = {}
+    cur: Step | None = None
+    last_total: tuple[int, ...] | None = None
+    model = ""
+
+    def step() -> Step:
+        nonlocal cur
+        if cur is None:
+            cur = Step(role="agent")
+            if model:
+                cur.meta["model"] = model
+            t.steps.append(cur)
+        return cur
+
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        e = json.loads(line)
+        kind, p, when = e.get("type"), e.get("payload") or {}, e.get("timestamp")
+        if kind == "session_meta":
+            t.session, t.cwd = p.get("id") or "", p.get("cwd") or ""
+            t.agent = " ".join(x for x in ("codex", p.get("cli_version")) if x)
+            continue
+        if kind == "turn_context":
+            model = p.get("model") or model
+            t.model = model
+            continue
+        ptype = p.get("type")
+        if kind == "event_msg":
+            if ptype == "user_message":
+                cur = None
+                s = Step(role="user", text=p.get("message") or "", raw=[e])
+                s.seen(when)
+                t.steps.append(s)
+            elif ptype in ("error", "stream_error", "turn_aborted"):
+                s = step()
+                s.error = one_line(str(p.get("message") or p.get("reason") or ptype))
+                s.raw.append(e)
+            elif ptype == "token_count" and p.get("info"):
+                info = p["info"]
+                total = info.get("total_token_usage") or {}
+                key = tuple(
+                    total.get(k) or 0
+                    for k in ("input_tokens", "cached_input_tokens", "output_tokens")
+                )
+                if key == last_total:
+                    continue
+                last_total = key
+                u = info.get("last_token_usage") or {}
+                s = step()
+                s.seen(when)
+                cached = u.get("cached_input_tokens") or 0
+                tok_meta(
+                    s.meta, (u.get("input_tokens") or 0) - cached,
+                    u.get("output_tokens") or 0, cached, 0,
+                    u.get("reasoning_output_tokens") or 0,
+                )  # fmt: skip
+                cur = None  # the count closes one model response
+            continue
+        if kind != "response_item":
+            continue
+        if ptype == "reasoning":
+            s = step()
+            s.seen(when)
+            s.raw.append(e)
+            body = "\n".join(
+                x.get("text") or ""
+                for x in p.get("summary") or []
+                if isinstance(x, dict)
+            )
+            s.reasoning += ("\n" if s.reasoning and body else "") + body
+        elif ptype == "message" and p.get("role") == "assistant":
+            s = step()
+            s.seen(when)
+            s.raw.append(e)
+            body = text_of(p.get("content"))
+            s.text += ("\n" if s.text and body else "") + body
+        elif ptype in ("function_call", "local_shell_call", "custom_tool_call"):
+            s = step()
+            s.seen(when)
+            s.raw.append(e)
+            args = jparse(p.get("arguments") or p.get("action") or p.get("input"))
+            if ptype == "custom_tool_call" and isinstance(args, str):
+                args = {"input": args}
+            c = Call(name=p.get("name") or ptype, args=args)
+            s.calls.append(c)
+            pending[p.get("call_id") or ""] = (s, c)
+        elif ptype in (
+            "function_call_output",
+            "custom_tool_call_output",
+            "local_shell_call_output",
+        ):
+            hit = pending.get(p.get("call_id") or "")
+            if not hit:
+                continue
+            s, c = hit
+            s.seen(when)
+            s.raw.append(e)
+            out = p.get("output")
+            obj = jparse(out)
+            if isinstance(obj, dict) and "output" in obj:
+                out = obj["output"]
+                secs = (obj.get("metadata") or {}).get("duration_seconds")
+                if isinstance(secs, (int, float)):
+                    c.duration = float(secs)
+            c.output = out if isinstance(out, str) else text_of(out)
+            c.exit_code = T.codex_exit(p.get("output"))
+            c.error = c.exit_code not in (None, 0)
+    return t.finish()
+
+
+def oc_error(err: Any) -> str:
+    if isinstance(err, dict):
+        msg = (
+            (err.get("data") or {}).get("message")
+            if isinstance(err.get("data"), dict)
+            else ""
+        )
+        return ": ".join(str(x) for x in (err.get("name"), msg) if x)
+    return str(err) if err else ""
+
+
+def oc_steps(
+    t: Trajectory, msgs: list[tuple[dict[str, Any], list[dict[str, Any]]]]
+) -> None:
+    """msgs: (message info, parts) in order; export (v1/v2) and DB shapes alike."""
+    for mi, parts in msgs:
+        role = mi.get("role") or mi.get("type")
+        s = Step(
+            role="user" if role == "user" else "agent" if role == "assistant" else "sys"
+        )
+        s.kind = "" if s.role != "sys" else str(role)
+        s.raw = [{**mi, "parts": parts}]
+        tm = mi.get("time") or {}
+        s.seen(tm.get("created"))
+        s.seen(tm.get("completed"))
+        model = mi.get("model")
+        if isinstance(model, dict):
+            model = "/".join(
+                x
+                for x in (
+                    model.get("providerID"),
+                    model.get("id") or model.get("modelID"),
+                )
+                if x
+            )
+        elif mi.get("modelID"):
+            model = "/".join(x for x in (mi.get("providerID"), mi["modelID"]) if x)
+        if s.role == "agent":
+            if model:
+                s.meta["model"] = t.model = str(model)
+            if mi.get("finish"):
+                s.meta["stop"] = str(mi["finish"])
+            tk = mi.get("tokens") or {}
+            cache = tk.get("cache") or {}
+            tok_meta(
+                s.meta, tk.get("input") or 0, tk.get("output") or 0,
+                cache.get("read") or 0, cache.get("write") or 0,
+                tk.get("reasoning") or 0, mi.get("cost") or 0.0,
+            )  # fmt: skip
+            s.error = oc_error(mi.get("error"))
+        texts = [mi["text"]] if isinstance(mi.get("text"), str) else []
+        for part in parts:
+            ptype = part.get("type")
+            if ptype == "text" and part.get("text"):
+                texts.append(part["text"])
+            elif ptype == "reasoning" and part.get("text"):
+                s.reasoning += ("\n" if s.reasoning else "") + part["text"]
+            elif ptype == "tool":
+                st = part.get("state") or {}
+                meta = st.get("metadata") or {}
+                code = meta.get("exit", meta.get("exit_code"))
+                out = st.get("output")
+                if out is None and st.get("content") is not None:
+                    out = text_of(st["content"])
+                c = Call(
+                    name=part.get("tool") or part.get("name") or "?",
+                    args=st.get("input"),
+                    output=out if isinstance(out, str) or out is None else str(out),
+                    exit_code=code if isinstance(code, int) else None,
+                    note=str(st.get("error") or ""),
+                )
+                c.error = st.get("status") == "error" or bool(c.exit_code)
+                if st.get("status") not in (None, "completed", "error"):
+                    c.note = c.note or str(st["status"])
+                pt = st.get("time") or part.get("time") or {}
+                a, b = (
+                    pt.get("start", pt.get("created")),
+                    pt.get("end", pt.get("completed")),
+                )
+                if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+                    c.duration = (b - a) / 1000
+                    s.seen(b)
+                s.calls.append(c)
+        s.text = "\n".join(texts)
+        t.steps.append(s)
+
+
+def load_opencode(path: Path) -> Trajectory:
+    doc = json.loads(path.read_text())
+    info = doc.get("info") or {}
+    t = Trajectory(
+        path=str(path), fmt="opencode", agent="opencode", session=info.get("id") or "",
+        cwd=(info.get("location") or {}).get("directory") or info.get("directory") or "",
+    )  # fmt: skip
+    msgs = []
+    for m in doc.get("messages") or []:
+        parts = m.get("parts") if "parts" in m else m.get("content")
+        mi = {
+            k: v
+            for k, v in (m.get("info") or m).items()
+            if k not in ("parts", "content")
+        }
+        msgs.append((mi, [x for x in parts or [] if isinstance(x, dict)]))
+    oc_steps(t, msgs)
+    return t.finish()
+
+
+def oc_db(path: Path) -> sqlite3.Connection:
+    try:
+        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        db.execute("select 1 from session limit 1")
+    except sqlite3.Error:
+        db = sqlite3.connect(f"file:{path}?immutable=1", uri=True)
+    db.row_factory = sqlite3.Row
+    return db
+
+
+def oc_sessions(path: Path, like: str | None) -> list[dict[str, Any]]:
+    db = oc_db(path)
+    q = (
+        "select s.id, s.title, s.directory, s.time_created,"
+        " (select count(*) from message m where m.session_id = s.id) as messages"
+        " from session s"
+    )
+    args: list[str] = []
+    if like:
+        q += " where s.id like ? or s.title like ?"
+        args = [f"%{like}%"] * 2
+    rows = [dict(r) for r in db.execute(q + " order by s.time_created desc", args)]
+    db.close()
+    return rows
+
+
+def load_opencode_db(path: Path, session_id: str) -> Trajectory:
+    db = oc_db(path)
+    row = db.execute(
+        "select id, directory from session where id = ?", (session_id,)
+    ).fetchone()
+    t = Trajectory(
+        path=f"{path}#{session_id}", fmt="opencode-db", agent="opencode",
+        session=session_id, cwd=(row["directory"] if row else "") or "",
+    )  # fmt: skip
+    parts: dict[str, list[dict[str, Any]]] = {}
+    for pr in db.execute(
+        "select message_id, data from part where session_id = ? order by id",
+        (session_id,),
+    ):
+        parts.setdefault(pr["message_id"], []).append(json.loads(pr["data"]))
+    msgs = [
+        (json.loads(mr["data"]), parts.get(mr["id"], []))
+        for mr in db.execute(
+            "select id, data from message where session_id = ? order by time_created, id",
+            (session_id,),
+        )
+    ]
+    db.close()
+    oc_steps(t, msgs)
+    return t.finish()
+
+
+LOADERS = {
+    "atif": load_atif,
+    "pi": load_pi,
+    "claude": load_claude,
+    "cortex": load_cortex,
+    "codex": load_codex,
+    "opencode": load_opencode,
+}
+
+# ---------------------------------------------------------------- rendering
+
+ROLE_STYLE = {"user": "bold cyan", "agent": "", "tool": "yellow", "sys": "magenta"}
+HEADER = f"{'#':>5} {'who':<5} {'tools':>5} ! {'time':>6}  text"
+
+
+def snippet(s: Step) -> Text:
+    out = Text()
+    head = one_line(s.text)
+    if s.kind and s.role in ("tool", "sys"):
+        out.append(s.kind, style="italic")
+        out.append("  " if head else "")
+    out.append(head)
+    if s.calls:
+        if out.plain:
+            out.append("  ")
+        c = s.calls[0]
+        out.append("→ ", style="dim")
+        out.append(c.name, style="green")
+        if c.title:
+            out.append(" " + c.title[:160], style="dim")
+        if len(s.calls) > 1:
+            out.append(f"  (+{len(s.calls) - 1})", style="dim")
+    if not out.plain:
+        out.append(
+            one_line(s.reasoning) or one_line(s.observation) or s.error or "(empty)",
+            style="dim italic",
+        )
+    return out
+
+
+def step_label(s: Step) -> Text:
+    out = Text(no_wrap=True, overflow="ellipsis")
+    out.append(f"{s.n:>5} ", style="dim")
+    out.append(f"{s.role:<5} ", style=ROLE_STYLE[s.role])
+    out.append(f"{len(s.calls) or '':>5} ", style="green")
+    out.append("✗ " if s.failed else "  ", style="bold red")
+    out.append(f"{dur(s.elapsed):>6}  ", style="dim")
+    out.append_text(snippet(s))
+    return out
+
+
+def meta_line(s: Step) -> str:
+    bits: list[str] = []
+    if s.start:
+        clock = s.start.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        if s.end and s.end != s.start:
+            clock += s.end.astimezone().strftime(" → %H:%M:%S")
+        bits.append(clock)
+    if s.kind:
+        bits.append(s.kind)
+    bits += [f"{k} {v}" for k, v in s.meta.items()]
+    return " · ".join(bits)
+
+
+def call_label(c: Call) -> Text:
+    out = Text(no_wrap=True, overflow="ellipsis")
+    out.append("✗ " if c.error else "", style="bold red")
+    out.append(c.name, style="bold green")
+    tail = [
+        f"exit {c.exit_code}" if c.exit_code is not None else "",
+        dur(c.duration),
+        f"{n_lines(c.output or '')} lines out" if c.output else "no output",
+    ]
+    out.append("  [" + " · ".join(x for x in tail if x) + "]", style="dim")
+    if c.title:
+        out.append("  " + c.title[:200])
+    return out
+
+
+def raw_json(s: Step) -> str:
+    return "\n".join(
+        json.dumps(r, indent=2, ensure_ascii=False, default=str) for r in s.raw
+    )
+
+
+def sections(s: Step) -> list[tuple[str, str]]:
+    """(title, body) for the non-call parts of a step, in display order."""
+    out = []
+    if s.error:
+        out.append(("error", s.error))
+    if s.text.strip():
+        out.append(("text", s.text.strip("\n")))
+    if s.reasoning.strip():
+        out.append(("reasoning", s.reasoning.strip("\n")))
+    return out
+
+
+def plain_step(s: Step, width: int = 100, cap: int | None = None) -> str:
+    out = [step_label(s).plain.rstrip(), "    " + meta_line(s)]
+
+    def block(title: str, body: str, indent: int) -> None:
+        pad = " " * indent
+        out.append(f"{pad}── {title} ({n_lines(body)} lines)")
+        out.extend(pad + "  " + ln for ln in wrap(body, width - indent - 2, cap))
+
+    for title, body in sections(s):
+        block(title, body, 4)
+    for c in s.calls:
+        out.append("    " + call_label(c).plain)
+        if c.note:
+            out.append("      " + c.note)
+        if fmt_args(c.args):
+            block("args", fmt_args(c.args), 6)
+        if c.output:
+            block("output", c.output, 6)
+    if s.observation.strip():
+        block("observation", s.observation.strip("\n"), 4)
+    return "\n".join(out)
+
+
+def title_line(t: Trajectory) -> str:
+    steps = t.steps
+    bits = [t.path, t.fmt, t.agent, t.model]
+    bits.append(
+        f"{len(steps)} steps ({sum(s.role == 'user' for s in steps)} user,"
+        f" {sum(s.role == 'agent' for s in steps)} agent)"
+    )
+    bits.append(f"{sum(len(s.calls) for s in steps)} tool calls")
+    bits.append(f"{sum(s.failed for s in steps)} steps with errors")
+    times = [x for s in steps for x in (s.start, s.end) if x]
+    if times:
+        bits.append(dur((max(times) - min(times)).total_seconds()))
+    return " · ".join(b for b in bits if b)
+
+
+# ---------------------------------------------------------------- TUI
+
+
+class Section(BaseModel):
+    """A tree node whose children are the wrapped lines of `body`."""
+
+    title: str
+    body: str = ""
+    step: int = 0  # index into steps, for lazily built bodies (raw)
+    lazy_raw: bool = False
+
+
+class Pager(ModalScreen[None]):
+    BINDINGS: ClassVar = [
+        Binding("escape,q,v,enter", "dismiss", "Close"),
+        Binding("j,down", "scroll(1)", "Down", show=False),
+        Binding("k,up", "scroll(-1)", "Up", show=False),
+        Binding("g,home", "edge(0)", "Top", show=False),
+        Binding("G,end", "edge(1)", "Bottom", show=False),
+        Binding("space,pagedown", "page(1)", "Page down", show=False),
+        Binding("b,pageup", "page(-1)", "Page up", show=False),
+    ]
+    DEFAULT_CSS = """
+    Pager { align: center middle; }
+    Pager > VerticalScroll { width: 96%; height: 94%; border: round $accent; padding: 0 1; background: $surface; }
+    """
+
+    def __init__(self, title: str, body: str) -> None:
+        super().__init__()
+        self.title_text, self.body = title, body
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll() as v:
+            v.border_title = self.title_text
+            v.border_subtitle = "esc/q close · j/k space/b g/G"
+            yield Static(Text(clean(self.body)))
+
+    def action_scroll(self, n: int) -> None:
+        self.query_one(VerticalScroll).scroll_relative(y=n, animate=False)
+
+    def action_page(self, n: int) -> None:
+        v = self.query_one(VerticalScroll)
+        v.scroll_relative(y=n * max(1, v.size.height - 2), animate=False)
+
+    def action_edge(self, end: int) -> None:
+        v = self.query_one(VerticalScroll)
+        (v.scroll_end if end else v.scroll_home)(animate=False)
+
+
+class Picker(ModalScreen[str | None]):
+    BINDINGS: ClassVar = [
+        Binding("escape,q", "dismiss(None)", "Quit"),
+        Binding("j", "move('down')", show=False),
+        Binding("k", "move('up')", show=False),
+    ]
+    DEFAULT_CSS = "Picker > OptionList { height: 1fr; border: round $accent; }"
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        super().__init__()
+        self.rows = rows
+
+    def compose(self) -> ComposeResult:
+        opts = []
+        for r in self.rows:
+            when = ts(r["time_created"])
+            label = Text(no_wrap=True, overflow="ellipsis")
+            label.append(when.astimezone().strftime("%Y-%m-%d %H:%M  ") if when else "")
+            label.append(f"{r['messages']:>4} msgs  ", style="dim")
+            label.append(r["title"] or "(untitled)")
+            label.append(f"  {r['id']}", style="dim")
+            opts.append(Option(label, id=r["id"]))
+        ol = OptionList(*opts)
+        ol.border_title = "OpenCode sessions (enter to open)"
+        yield ol
+
+    def action_move(self, way: str) -> None:
+        getattr(self.query_one(OptionList), f"action_cursor_{way}")()
+
+    @on(OptionList.OptionSelected)
+    def chosen(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id)
+
+
+class Browser(App[None]):
+    CSS = """
+    #title { height: 1; background: $primary-darken-2; color: $text; padding: 0 1; }
+    #cols { height: 1; color: $text-muted; text-style: bold; padding: 0 0 0 2; }
+    #status { height: 1; color: $text-muted; padding: 0 1; }
+    Tree { height: 1fr; padding: 0; }
+    #search { display: none; height: 3; }
+    #search.on { display: block; }
+    """
+    BINDINGS: ClassVar = [
+        Binding("q", "quit", "Quit"),
+        Binding("j", "tree('cursor_down')", show=False),
+        Binding("k", "tree('cursor_up')", show=False),
+        Binding("g", "tree('scroll_home')", show=False),
+        Binding("G", "tree('scroll_end')", show=False),
+        Binding("l,right", "open", "Expand", show=False),
+        Binding("h,left", "close", "Step/collapse"),
+        Binding("v", "view", "View all"),
+        Binding("e", "jump('error', 1)", "Next error"),
+        Binding("E", "jump('error', -1)", "Prev error", show=False),
+        Binding("u", "jump('user', 1)", "Next user"),
+        Binding("U", "jump('user', -1)", "Prev user", show=False),
+        Binding("slash", "search", "Search"),
+        Binding("n", "jump('match', 1)", "Next match", show=False),
+        Binding("N", "jump('match', -1)", "Prev match", show=False),
+        Binding("plus,equals_sign", "all(True)", "Expand all", show=False),
+        Binding("minus", "all(False)", "Collapse all", show=False),
+        Binding("escape", "cancel", show=False),
+    ]
+
+    def __init__(self, traj: Trajectory | None, db: Path | None = None,
+                 sessions: list[dict[str, Any]] | None = None) -> None:  # fmt: skip
+        super().__init__()
+        self.traj, self.db, self.sessions = traj, db, sessions or []
+        self.query = ""
+        self.hay: dict[int, str] = {}
+
+    def compose(self) -> ComposeResult:
+        yield Static("", id="title")
+        yield Static(HEADER, id="cols")
+        tree: Tree[Any] = Tree("trajectory")
+        tree.show_root = False
+        tree.guide_depth = 3
+        yield tree
+        yield Input(placeholder="search text, commands and output", id="search")
+        yield Static("", id="status")
+        yield Footer()
+
+    @property
+    def tree(self) -> Tree[Any]:
+        return self.query_one(Tree)
+
+    def on_mount(self) -> None:
+        if self.traj is not None:
+            self.show(self.traj)
+        else:
+            assert self.db is not None
+
+            def picked(session_id: str | None) -> None:
+                if session_id is None:
+                    self.exit()
+                else:
+                    assert self.db is not None
+                    self.show(load_opencode_db(self.db, session_id))
+
+            self.push_screen(Picker(self.sessions), picked)
+
+    def show(self, traj: Trajectory) -> None:
+        self.traj = traj
+        self.hay.clear()
+        self.query_one("#title", Static).update(
+            Text(title_line(traj), no_wrap=True, overflow="ellipsis")
+        )
+        tree = self.tree
+        tree.clear()
+        for s in traj.steps:
+            tree.root.add(step_label(s), data=s, allow_expand=True)
+        tree.focus()
+        self.status(f"{len(traj.steps)} steps")
+
+    def status(self, msg: str) -> None:
+        self.query_one("#status", Static).update(msg)
+
+    # ----- building nodes lazily
+
+    def width_for(self, node: TreeNode[Any]) -> int:
+        depth, n = 0, node
+        while n.parent is not None:
+            depth, n = depth + 1, n.parent
+        return self.tree.size.width - depth * self.tree.guide_depth - 4
+
+    def add_section(self, parent: TreeNode[Any], title: str, body: str,
+                    open_under: int = 0, style: str = "bold") -> None:  # fmt: skip
+        label = Text(no_wrap=True)
+        label.append(title, style=style)
+        label.append(f"  ({n_lines(body)} lines)", style="dim")
+        node = parent.add(
+            label, data=Section(title=title, body=body), allow_expand=True
+        )
+        if n_lines(body) <= open_under:
+            node.expand()
+
+    def fill(self, node: TreeNode[Any]) -> None:
+        data = node.data
+        if isinstance(data, Step):
+            node.add_leaf(Text(meta_line(data), style="dim"), data=None)
+            for title, body in sections(data):
+                self.add_section(
+                    node, title, body,
+                    open_under=0 if title == "reasoning" else 40,
+                    style="bold red" if title == "error" else "bold",
+                )  # fmt: skip
+            for c in data.calls:
+                node.add(call_label(c), data=c, allow_expand=True)
+            if data.observation.strip():
+                self.add_section(node, "observation", data.observation.strip("\n"), 25)
+            raw = node.add(
+                Text("raw", style="dim bold"),
+                data=Section(title="raw", step=data.n, lazy_raw=True),
+                allow_expand=True,
+            )
+            del raw
+        elif isinstance(data, Call):
+            if data.note:
+                node.add_leaf(Text(data.note, style="red" if data.error else "dim"))
+            if fmt_args(data.args):
+                self.add_section(node, "args", fmt_args(data.args), 60)
+            if data.output:
+                self.add_section(node, "output", data.output, 40)
+            elif not node.children:
+                node.add_leaf(Text("(no arguments, no output)", style="dim"))
+        elif isinstance(data, Section):
+            body = self.body_of(data)
+            for ln in wrap(body, self.width_for(node)):
+                node.add_leaf(Text(ln, no_wrap=True), data=None)
+
+    def body_of(self, sec: Section) -> str:
+        if sec.lazy_raw and not sec.body and self.traj:
+            sec.body = raw_json(self.traj.steps[sec.step - 1])
+        return sec.body
+
+    @on(Tree.NodeExpanded)
+    def expanded(self, event: Tree.NodeExpanded[Any]) -> None:
+        if not event.node.children:
+            self.fill(event.node)
+
+    @on(Tree.NodeCollapsed)
+    def collapsed(self, event: Tree.NodeCollapsed[Any]) -> None:
+        if isinstance(event.node.data, Section):  # re-wrapped to the width next time
+            event.node.remove_children()
+
+    # ----- navigation
+
+    def step_node(self, node: TreeNode[Any] | None) -> TreeNode[Any] | None:
+        while node is not None and not isinstance(node.data, Step):
+            node = node.parent
+        return node
+
+    def goto(self, node: TreeNode[Any]) -> None:
+        self.tree.move_cursor(node)
+        self.tree.scroll_to_node(node, animate=False)
+
+    def action_tree(self, name: str) -> None:
+        getattr(self.tree, f"action_{name}")()
+
+    def action_open(self) -> None:
+        node = self.tree.cursor_node
+        if node is not None and node.allow_expand and not node.is_expanded:
+            node.expand()
+
+    def action_close(self) -> None:
+        node = self.tree.cursor_node
+        if node is None:
+            return
+        if node.allow_expand and node.is_expanded:
+            node.collapse()
+        elif isinstance(node.data, Step):
+            return
+        elif node.parent is not None and node.parent.parent is not None:
+            self.goto(node.parent)
+
+    def action_all(self, expand: bool) -> None:
+        for node in self.tree.root.children:
+            node.expand() if expand else node.collapse()
+
+    def action_view(self) -> None:
+        node = self.tree.cursor_node
+        while node is not None and node.data is None:
+            node = node.parent
+        if node is None or self.traj is None:
+            return
+        d = node.data
+        if isinstance(d, Section):
+            sn = self.step_node(node)
+            where = f"step {sn.data.n} · " if sn else ""
+            owner = node.parent.data if node.parent else None
+            if isinstance(owner, Call):
+                where += f"{owner.name} · "
+            self.push_screen(Pager(where + d.title, self.body_of(d)))
+        elif isinstance(d, Call):
+            sn = self.step_node(node)
+            body = "\n".join(
+                x for x in (
+                    d.note, "── args", fmt_args(d.args), "", "── output", d.output or "(none)",
+                ) if x is not None
+            )  # fmt: skip
+            self.push_screen(Pager(f"step {sn.data.n if sn else '?'} · {d.name}", body))
+        elif isinstance(d, Step):
+            self.push_screen(Pager(f"step {d.n}", plain_step(d, 10_000)))
+
+    def matches(self, s: Step, what: str) -> bool:
+        if what == "error":
+            return s.failed
+        if what == "user":
+            return s.role == "user"
+        if s.n not in self.hay:
+            self.hay[s.n] = s.haystack()
+        return bool(self.query) and self.query in self.hay[s.n]
+
+    def action_jump(self, what: str, direction: int) -> None:
+        if self.traj is None or not self.traj.steps:
+            return
+        if what == "match" and not self.query:
+            self.status("no search yet: press /")
+            return
+        nodes = self.tree.root.children
+        cur = self.step_node(self.tree.cursor_node)
+        i = cur.data.n - 1 if cur else (-1 if direction > 0 else len(nodes))
+        hits = [s.n - 1 for s in self.traj.steps if self.matches(s, what)]
+        label = f"'{self.query}'" if what == "match" else f"{what} steps"
+        if not hits:
+            self.status(f"no {label}")
+            return
+        later = (
+            [h for h in hits if h > i] if direction > 0 else [h for h in hits if h < i]
+        )
+        wrapped = not later
+        target = (
+            (later[0] if direction > 0 else later[-1]) if later
+            else (hits[0] if direction > 0 else hits[-1])
+        )  # fmt: skip
+        self.goto(nodes[target])
+        self.status(
+            f"{label}: {hits.index(target) + 1}/{len(hits)}"
+            + ("  (wrapped)" if wrapped else "")
+        )
+
+    def action_search(self) -> None:
+        box = self.query_one("#search", Input)
+        box.add_class("on")
+        box.value = ""
+        box.focus()
+
+    def action_cancel(self) -> None:
+        self.query_one("#search", Input).remove_class("on")
+        self.tree.focus()
+
+    @on(Input.Submitted, "#search")
+    def searched(self, event: Input.Submitted) -> None:
+        self.query = event.value.strip().lower()
+        self.action_cancel()
+        if self.query:
+            cur = self.step_node(self.tree.cursor_node)
+            if cur is not None and self.matches(cur.data, "match"):
+                hits = (
+                    [s for s in self.traj.steps if self.matches(s, "match")]
+                    if self.traj
+                    else []
+                )
+                self.status(f"'{self.query}': {hits.index(cur.data) + 1}/{len(hits)}")
+            else:
+                self.action_jump("match", 1)
+
+
+# ---------------------------------------------------------------- main
+
+
+def dump(t: Trajectory, step: int | None) -> int:
+    if step is not None:
+        if not 1 <= step <= len(t.steps):
+            print(f"trajview: no step {step} (1..{len(t.steps)})", file=sys.stderr)
+            return 1
+        print(plain_step(t.steps[step - 1]))
+        return 0
+    print(title_line(t))
+    print(HEADER)
+    for s in t.steps:
+        print(step_label(s).plain.rstrip()[:240])
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument("file", type=Path)
+    ap.add_argument("--format", choices=[*LOADERS, "opencode-db"])
+    ap.add_argument("--session", help="opencode.db: session id or title substring")
+    ap.add_argument("--dump", action="store_true", help="print instead of browsing")
+    ap.add_argument("--step", type=int, help="with --dump: one step, expanded")
+    a = ap.parse_args()
+    path: Path = a.file
+    if path.is_dir():  # a Harbor trial directory
+        inner = path / "agent" / "trajectory.json"
+        if not inner.exists():
+            ap.error(f"{path} is a directory (give one trajectory file)")
+        path = inner
+    if not path.exists():
+        ap.error(f"{path}: no such file")
+    fmt = a.format or T.detect(path)
+    if fmt is None:
+        print(f"trajview: {path}: unrecognized format (try --format)", file=sys.stderr)
+        return 1
+    plain = a.dump or a.step is not None or not sys.stdout.isatty()
+    traj: Trajectory | None = None
+    sessions: list[dict[str, Any]] = []
+    if fmt == "opencode-db":
+        sessions = oc_sessions(path, a.session)
+        if not sessions:
+            print("trajview: no matching session", file=sys.stderr)
+            return 1
+        if len(sessions) == 1:
+            traj = load_opencode_db(path, sessions[0]["id"])
+        elif plain:
+            for r in sessions:
+                when = ts(r["time_created"])
+                stamp = when.astimezone().strftime("%Y-%m-%d %H:%M") if when else ""
+                print(
+                    f"{r['id']}  {stamp}  {r['messages']:>4} msgs  {r['title'] or ''}"
+                )
+            print(
+                "trajview: several sessions; pick one with --session", file=sys.stderr
+            )
+            return 1
+    else:
+        traj = LOADERS[fmt](path)
+    if plain:
+        assert traj is not None
+        return dump(traj, a.step)
+    Browser(traj, db=path, sessions=sessions).run()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
