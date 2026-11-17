@@ -18,6 +18,12 @@ Recognised forms (the path may be in backticks or a markdown link):
     src/app.py#L120-L180      src/app.py lines 120-180  src/app.py (line 120)
     src/app.py L120-L180      line 120 of src/app.py    lines 3 to 9 in app.py
     src/app.py                (a bare path opens at the top)
+    [app](src/app.py#L120)    [app](file:///abs/src/app.py#L120-L180)
+    file:///abs/src/app.py#L120
+
+An absolute path that does not exist here (a link written on another machine
+or in another checkout) is matched by the longest tail of it that names a
+file in the project, so run with -C pointing at your copy.
 
 A candidate only counts when it resolves to a real file: an absolute or
 ~ path, a path relative to the project root or to the document's directory,
@@ -51,6 +57,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import ClassVar
+from urllib.parse import unquote
 
 from pydantic import BaseModel
 from rich.style import Style
@@ -82,6 +89,9 @@ AFTER = re.compile(
     rf"(\d+)(?:\s*{RANGE_SEP}\s*L?(\d+))?(?!\w)"
 )
 # line 12 of path   lines 3 to 9 in path
+# [text](target)  [text](<target>)  [text](target "title")
+MDLINK = re.compile(r"\[[^\]\n]*\]\(<?([^)\s>]+)>?(?:\s+\"[^\"\n]*\")?\)")
+FILEURL = re.compile(r"file://[^\s)>\]`\"']+")
 BEFORE = re.compile(
     rf"(?:\blines?\s+|\bL)(\d+)(?:\s*{RANGE_SEP}\s*L?(\d+))?\s+(?:of|in|at)\s+[`'\"*(\[]*$"
 )
@@ -214,12 +224,19 @@ class Project:
         return self._resolved[token]
 
     def _resolve(self, token: str) -> list[Path]:
-        if token.startswith("~"):
+        if token.startswith(("~", "/")):
             p = Path(token).expanduser()
-            return [p] if p.is_file() else []
-        if token.startswith("/"):
-            p = Path(token)
-            return [p] if p.is_file() else []
+            if p.is_file():
+                return [p]
+            # Written on another machine or checkout: match the longest tail
+            # of the path that names a file in this project.
+            parts = [x for x in token.split("/") if x not in ("", ".", "~")]
+            if ".." in parts:
+                return []
+            for i in range(1, len(parts)):
+                if hits := self._tail(parts[i:]):
+                    return hits
+            return []
         rel = token.removeprefix("./")
         for base in (self.root, self.doc_dir):
             p = base / rel
@@ -233,6 +250,13 @@ class Project:
             p = self.root.joinpath(*parts[i:])
             if p.is_file() and parts[i - 1] == self.root.name:
                 return [p]
+        return self._tail(parts)
+
+    def _tail(self, parts: list[str]) -> list[Path]:
+        """Files under the root whose path ends with these components."""
+        exact = self.root.joinpath(*parts)
+        if exact.is_file():
+            return [exact]
         tail = "/".join(parts)
         hits = [
             f
@@ -275,51 +299,110 @@ def line_range(a: str, b: str | None) -> tuple[int, int | None]:
     return first, last
 
 
+def parse_target(target: str) -> tuple[str, int | None, int | None] | None:
+    """Split a link target or file:// URL into a path and a line range."""
+    if target.startswith("file://"):
+        rest = target[7:]
+        if not rest.startswith("/"):  # file://host/path
+            rest = rest[rest.find("/") :] if "/" in rest else ""
+        target = rest
+    elif "://" in target or target.startswith(("#", "mailto:")):
+        return None
+    first: int | None = None
+    last: int | None = None
+    path, _, frag = target.partition("#")
+    if m := re.fullmatch(r"L(\d+)(?:C\d+)?(?:[-–]L?(\d+)(?:C\d+)?)?", frag):
+        first, last = line_range(m[1], m[2])
+    elif m := re.search(r":(\d+)(?:[-–](\d+)|:\d+)?$", path):
+        first, last = line_range(m[1], m[2])
+        path = path[: m.start()]
+    path = unquote(path)
+    return (path, first, last) if path else None
+
+
+Found = tuple[int, int, list[Path], int | None, int | None]
+
+
+def find_links(line: str, project: Project) -> list[Found]:
+    """Markdown links and file:// URLs, each taken as one reference."""
+    found: list[Found] = []
+    taken = 0
+    spans = [(m.start(), m.end(), m[1]) for m in MDLINK.finditer(line)]
+    spans += [(m.start(), m.end(), m[0]) for m in FILEURL.finditer(line)]
+    for start, end, target in sorted(spans):
+        if start < taken:
+            continue  # the URL inside a link already handled
+        if line.startswith("file://", start):  # a bare URL: drop sentence punctuation
+            trimmed = target.rstrip(".,;:")
+            end -= len(target) - len(trimmed)
+            target = trimmed
+        parsed = parse_target(target)
+        if parsed is None:
+            continue
+        paths = project.resolve(parsed[0])
+        if paths:
+            found.append((start, end, paths, parsed[1], parsed[2]))
+            taken = end
+    return found
+
+
 def find_refs(lines: list[str], project: Project) -> list[Ref]:
     refs: list[Ref] = []
     for n, line in enumerate(lines):
-        pos = 0
-        for m in TOKEN.finditer(line):
-            if m.start() < pos:
-                continue
-            token = m.group().rstrip(".,-/~+@")
-            if not token or token.startswith("//") or len(token) > 400:
-                continue
-            start, end = m.start(), m.start() + len(token)
-            first: int | None = None
-            last: int | None = None
-            span_start, span_end = start, end
-            if d := DIRECT.match(line, end):
-                first, last = line_range(d[1] or d[3], d[2] or d[4])
-                span_end = d.end()
-            elif "/" not in token and "." not in token:
-                continue  # a plain word needs an attached line number
-            elif a := AFTER.match(line, end):
-                first, last = line_range(a[1], a[2])
-                span_end = a.end()
-            elif b := BEFORE.search(line[:start]):
-                first, last = line_range(b[1], b[2])
-                span_start = b.start()
-            paths = project.resolve(token)
-            if not paths:
-                continue
-            if first is None and len(paths) > 1 and "/" not in token:
-                continue  # a bare, ambiguous file name is more noise than signal
+        found = find_links(line, project) if "](" in line or "file://" in line else []
+        found += find_plain(line, project, [(s, e) for s, e, *_ in found])
+        for start, end, paths, first, last in sorted(found, key=lambda f: f[0]):
             refs.append(
                 Ref(
                     idx=len(refs),
                     doc_line=n,
-                    start=span_start,
-                    end=span_end,
-                    raw=line[span_start:span_end],
+                    start=start,
+                    end=end,
+                    raw=line[start:end],
                     paths=paths,
                     counts=[project.line_count(p) for p in paths],
                     first=first,
                     last=last,
                 )
             )
-            pos = span_end
     return refs
+
+
+def find_plain(
+    line: str, project: Project, taken: list[tuple[int, int]]
+) -> list[Found]:
+    """Paths written in running text, outside the spans already taken."""
+    found: list[Found] = []
+    pos = 0
+    for m in TOKEN.finditer(line):
+        if m.start() < pos or any(s < m.end() and m.start() < e for s, e in taken):
+            continue
+        token = m.group().rstrip(".,-/~+@")
+        if not token or token.startswith("//") or len(token) > 400:
+            continue
+        start, end = m.start(), m.start() + len(token)
+        first: int | None = None
+        last: int | None = None
+        span_start, span_end = start, end
+        if d := DIRECT.match(line, end):
+            first, last = line_range(d[1] or d[3], d[2] or d[4])
+            span_end = d.end()
+        elif "/" not in token and "." not in token:
+            continue  # a plain word needs an attached line number
+        elif a := AFTER.match(line, end):
+            first, last = line_range(a[1], a[2])
+            span_end = a.end()
+        elif b := BEFORE.search(line[:start]):
+            first, last = line_range(b[1], b[2])
+            span_start = b.start()
+        paths = project.resolve(token)
+        if not paths:
+            continue
+        if first is None and len(paths) > 1 and "/" not in token:
+            continue  # a bare, ambiguous file name is more noise than signal
+        found.append((span_start, span_end, paths, first, last))
+        pos = span_end
+    return found
 
 
 def list_refs(refs: list[Ref], project: Project) -> int:
