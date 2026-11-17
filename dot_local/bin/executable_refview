@@ -38,8 +38,14 @@ from the slug.
 Marks: a reference whose line is past the end of the file is shown in red
 ("stale"); one with several candidate files is shown in yellow.
 
+Search: `/` searches the focused pane (plain text; case-insensitive unless
+the pattern has a capital). While a pane has a search, n/N in that pane step
+through its matches and esc clears it; `]` and `[` always step references.
+In the document a match has to sit on one wrapped line.
+
 Keys
-  n/N          next/previous reference  enter  re-centre the current reference
+  n/N  ] [     next/previous reference  enter  re-centre the current reference
+  /            search the focused pane  esc    clear that pane's search
   click        open a reference         r      list of all references
   tab          switch pane              a      next candidate file
   j/k g/G      scroll the focused pane  h/l    scroll sideways
@@ -71,7 +77,7 @@ from textual.geometry import Size
 from textual.screen import ModalScreen
 from textual.scroll_view import ScrollView
 from textual.strip import Strip
-from textual.widgets import Footer, OptionList
+from textual.widgets import Footer, Input, OptionList
 from textual.widgets.option_list import Option
 
 MAX_BYTES = 5_000_000  # larger targets are not loaded
@@ -100,6 +106,8 @@ REF_STYLE = Style(color="bright_cyan", underline=True)
 STALE_STYLE = Style(color="bright_red", underline=True)
 AMBIG_STYLE = Style(color="bright_yellow", underline=True)
 CURRENT_STYLE = Style(reverse=True, bold=True)
+MATCH_STYLE = Style(color="black", bgcolor="#8a7a2f")
+MATCH_NOW_STYLE = Style(color="black", bgcolor="#ffd75f", bold=True)
 MARK_FILL = Style(bgcolor="#3b3a1f")
 GUTTER = Style(color="#6c7480")
 GUTTER_MARK = Style(color="#e5c07b", bold=True)
@@ -440,11 +448,80 @@ class LineView(ScrollView, can_focus=True):
     def __init__(self, id: str) -> None:
         super().__init__(id=id)
         self.lines: list[Text] = []
+        self.status = ""  # the pane's own subtitle, shown before search info
+        self.needle = ""
+        self.matches: list[tuple[int, int, int]] = []  # line, start, end
+        self.match_at: dict[int, list[int]] = {}  # line -> indexes into matches
+        self.match_now = -1
 
     def set_lines(self, lines: list[Text], extra_width: int = 0) -> None:
         self.lines = lines
         width = max((ln.cell_len for ln in lines), default=0) + extra_width
         self.virtual_size = Size(width, len(lines))
+        self.scan()
+        self.refresh()
+
+    # -- search
+
+    def lead(self) -> int:
+        """Columns drawn before the line's own text (a gutter)."""
+        return 0
+
+    def set_status(self, status: str) -> None:
+        self.status = status
+        self.show_status()
+
+    def show_status(self) -> None:
+        if not self.needle:
+            self.border_subtitle = self.status
+            return
+        where = f"{self.match_now + 1}/" if self.match_now >= 0 else ""
+        count = f"{where}{len(self.matches)}" if self.matches else "no match"
+        found = Text.assemble(("/" + self.needle, "bold"), f" {count}")
+        self.border_subtitle = Text.assemble(self.status, "  ", found)
+
+    def search(self, needle: str) -> bool:
+        """Set (or with "" clear) the pane's search; True if it has matches."""
+        self.needle = needle
+        self.scan()
+        self.refresh()
+        return bool(self.matches)
+
+    def scan(self) -> None:
+        self.matches = []
+        self.match_at = {}
+        self.match_now = -1
+        if self.needle:
+            flags = 0 if any(c.isupper() for c in self.needle) else re.IGNORECASE
+            pattern = re.compile(re.escape(self.needle), flags)
+            for n, line in enumerate(self.lines):
+                for m in pattern.finditer(line.plain):
+                    self.match_at.setdefault(n, []).append(len(self.matches))
+                    self.matches.append((n, m.start(), m.end()))
+        self.show_status()
+
+    def find(self, way: int) -> None:
+        """Move to the next (1) or previous (-1) match and bring it into view."""
+        if not self.matches:
+            return
+        if self.match_now >= 0:
+            self.match_now = (self.match_now + way) % len(self.matches)
+        elif way > 0:
+            after = [i for i, m in enumerate(self.matches) if m[0] >= self.top()]
+            self.match_now = after[0] if after else 0
+        else:
+            bottom = self.top() + self.text_height()
+            before = [i for i, m in enumerate(self.matches) if m[0] < bottom]
+            self.match_now = before[-1] if before else len(self.matches) - 1
+        line, start, end = self.matches[self.match_now]
+        width = self.text_width()
+        x = int(self.scroll_offset.x)
+        lo, hi = start + self.lead(), end + self.lead()
+        if not (x <= lo and hi <= x + width):
+            x = 0 if hi <= width else lo - width // 2
+        y = self.top() if self.shows(line) else line - self.text_height() // 3
+        self.scroll_to(x=max(0, x), y=max(0, y), animate=False, force=True)
+        self.show_status()
         self.refresh()
 
     def line_text(self, idx: int) -> Text:
@@ -461,6 +538,13 @@ class LineView(ScrollView, can_focus=True):
         if not 0 <= idx < len(self.lines):
             return Strip.blank(width, base)
         text = self.line_text(idx)
+        if hits := self.match_at.get(idx):
+            text = text.copy()
+            lead = self.lead()
+            for i in hits:
+                _, start, end = self.matches[i]
+                look = MATCH_NOW_STYLE if i == self.match_now else MATCH_STYLE
+                text.stylize(look, start + lead, end + lead)
         fill = self.line_fill(idx)
         style = base + fill if fill else base
         strip = Strip(list(text.render(self.app.console)), text.cell_len)
@@ -470,11 +554,15 @@ class LineView(ScrollView, can_focus=True):
         """Columns available for text: the content area minus the scrollbar."""
         return self.scrollable_content_region.width
 
+    def text_height(self) -> int:
+        """Rows available for text: the content area minus the scrollbar."""
+        return self.scrollable_content_region.height
+
     def top(self) -> int:
         return int(self.scroll_offset.y)
 
     def shows(self, idx: int) -> bool:
-        return self.top() <= idx < self.top() + self.size.height
+        return self.top() <= idx < self.top() + self.text_height()
 
     def go(self, y: int) -> None:
         self.scroll_to(x=0, y=max(0, y), animate=False, force=True)
@@ -587,7 +675,7 @@ class DocView(LineView):
             return
         line = self.ref_line.get(ref)
         if line is not None and not self.shows(line):
-            self.go(line - self.size.height // 3)
+            self.go(line - self.text_height() // 3)
 
     def on_click(self, event: events.Click) -> None:
         off = event.get_content_offset(self)
@@ -635,6 +723,9 @@ class CodeView(LineView):
 
     def line_fill(self, idx: int) -> Style | None:
         return MARK_FILL if idx in self.mark else None
+
+    def lead(self) -> int:
+        return self.gut_w
 
 
 class RefList(ModalScreen[int | None]):
@@ -736,10 +827,16 @@ class RefView(App[None]):
     LineView:focus { border: round $accent; }
     #doc { overflow-x: hidden; }
     #code { width: 1fr; scrollbar-size-horizontal: 1; }
+    #search { display: none; height: 1; border: none; padding: 0 1; }
+    #search.on { display: block; }
     """
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("n", "step(1)", "next ref"),
-        Binding("N", "step(-1)", "prev ref"),
+        Binding("n", "step(1)", "next"),
+        Binding("N", "step(-1)", "prev"),
+        Binding("]", "ref_step(1)", show=False),
+        Binding("[", "ref_step(-1)", show=False),
+        Binding("/", "search", "search"),
+        Binding("escape", "escape", show=False),
         Binding("enter", "recentre", "re-centre"),
         Binding("r", "ref_list", "list"),
         Binding("a", "candidate", "candidate"),
@@ -761,11 +858,13 @@ class RefView(App[None]):
         self.current: int | None = None
         self.split = 45
         self._code: dict[Path, list[Text]] = {}
+        self._pane: LineView | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal():
             yield DocView("doc", self.source, self.refs)
             yield CodeView("code")
+        yield Input(id="search")
         yield Footer()
 
     @property
@@ -783,7 +882,7 @@ class RefView(App[None]):
         self.doc_view.border_title = (
             f"{self.project.show(self.doc)}  ({n} reference{'' if n == 1 else 's'})"
         )
-        self.doc_view.border_subtitle = f"root {self.project.show(self.project.root)}"
+        self.doc_view.set_status(f"root {self.project.show(self.project.root)}")
         self.doc_view.focus()
         if self.refs:
             self.call_after_refresh(self.select_ref, 0, False)
@@ -811,7 +910,7 @@ class RefView(App[None]):
             hi = min(ref.last or ref.first, max(1, len(lines)))
             if not ref.stale:
                 mark = range(lo - 1, hi)
-            height = view.size.height
+            height = view.text_height()
             span = hi - lo + 1
             lead = height // 3 if span < height - height // 3 else 1
             target = lo - 1 - lead
@@ -825,8 +924,8 @@ class RefView(App[None]):
                 f"  candidate {ref.pick + 1} of {len(ref.paths)} (a)", "bright_yellow"
             )
         view.border_title = title
-        view.border_subtitle = (
-            f"{self.current + 1 if self.current is not None else 0}/{len(self.refs)}"
+        view.set_status(
+            f"ref {self.current + 1 if self.current is not None else 0}/{len(self.refs)}"
         )
         view.show_file(lines, mark)
         view.call_after_refresh(view.go, target)
@@ -835,7 +934,52 @@ class RefView(App[None]):
     def picked(self, event: DocView.Picked) -> None:
         self.select_ref(event.ref, reveal=False)
 
+    # -- search
+
+    def pane(self) -> LineView:
+        """The pane keys apply to: the focused one, else the last one used."""
+        if isinstance(self.focused, LineView):
+            self._pane = self.focused
+        return self._pane or self.doc_view
+
+    def action_search(self) -> None:
+        pane = self.pane()
+        box = self.query_one("#search", Input)
+        box.placeholder = (
+            f"search {'the document' if pane is self.doc_view else 'the file'}"
+        )
+        box.value = ""
+        box.add_class("on")
+        box.focus()
+
+    @on(Input.Submitted, "#search")
+    def searched(self, event: Input.Submitted) -> None:
+        pane = self.pane()
+        self.close_search()
+        if pane.search(event.value):
+            pane.find(1)
+        elif event.value:
+            self.notify(f"not found: {event.value}", severity="warning", timeout=3)
+
+    def close_search(self) -> None:
+        pane = self.pane()
+        self.query_one("#search", Input).remove_class("on")
+        pane.focus()
+
+    def action_escape(self) -> None:
+        if self.query_one("#search", Input).has_class("on"):
+            self.close_search()
+        else:
+            self.pane().search("")
+
     def action_step(self, way: int) -> None:
+        pane = self.pane()
+        if pane.needle:
+            pane.find(way)
+        else:
+            self.action_ref_step(way)
+
+    def action_ref_step(self, way: int) -> None:
         if not self.refs:
             return
         doc = self.doc_view
@@ -847,7 +991,7 @@ class RefView(App[None]):
             below = [i for i, y in sorted(doc.ref_line.items()) if y >= doc.top()]
             nxt = below[0] if below else len(self.refs) - 1
         else:
-            bottom = doc.top() + doc.size.height
+            bottom = doc.top() + doc.text_height()
             above = [i for i, y in sorted(doc.ref_line.items()) if y < bottom]
             nxt = above[-1] if above else 0
         nxt = max(0, min(len(self.refs) - 1, nxt))
@@ -893,6 +1037,8 @@ class RefView(App[None]):
         self.open_ref(ref)
 
     def action_swap(self) -> None:
+        if self.query_one("#search", Input).has_class("on"):
+            self.close_search()
         (self.code_view if self.doc_view.has_focus else self.doc_view).focus()
 
     def action_divider(self, by: int) -> None:
